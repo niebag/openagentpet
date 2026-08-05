@@ -11,7 +11,7 @@ import { defaultPetPackDirectory, loadPetPack } from "../src/pet-pack.js";
 import type { Pet } from "../src/protocol.js";
 
 const transparentGif = await readFile(
-  path.join(defaultPetPackDirectory, "clawd-vibing.gif"),
+  path.join(defaultPetPackDirectory, "idle.gif"),
 );
 const packAssets = {
   Idle: "idle.gif",
@@ -40,11 +40,11 @@ test("the built-in default Pet pack provides every Activity state", async () => 
       ]),
     ),
     {
-      Idle: "clawd-vibing.gif",
-      Thinking: "clawd-thinking.gif",
-      Researching: "clawd-researching.gif",
-      Working: "clawd-building.gif",
-      "Needs input": "clawd-idea.gif",
+      Idle: "idle.gif",
+      Thinking: "thinking.gif",
+      Researching: "researching.gif",
+      Working: "working.gif",
+      "Needs input": "needs-input.gif",
     },
   );
 });

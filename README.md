@@ -35,7 +35,7 @@
 OpenAgentPet turns observable activity from each local Claude Code session into a small animated Pet that floats above your macOS windows. It stays click-through while you work and sends no prompt or transcript data off your Mac.
 
 > [!NOTE]
-> OpenAgentPet is preparing its first public release. The npm package is not published yet, so the quick-start command will become available with that release.
+> OpenAgentPet 1.0.0 is the first public-release candidate. The quick-start command will work after that version is published to npm.
 
 ## Preview
 
@@ -50,14 +50,14 @@ OpenAgentPet turns observable activity from each local Claude Code session into 
       <sub>A Claude Code tool is running</sub>
     </td>
     <td>
-      <img src="public/default-pet-pack/clawd-building.gif" width="280" alt="The current default OpenAgentPet character floating beside a local Claude Code session on macOS" />
+      <img src="public/default-pet-pack/working.gif" width="280" alt="The default OpenAgentPet robot in its Working Activity state" />
     </td>
   </tr>
 </table>
 
 This is an illustrative preview. The real Pet has a transparent, always-on-top window that floats above ordinary macOS windows; it is not embedded in Claude Code. Each spawned local session gets its own Pet.
 
-The preview uses the current default artwork in this repository. Its attribution and redistribution rights are still being verified before public release. No license or redistribution claim is made for that artwork here.
+The default robot artwork was generated for OpenAgentPet and is released under MIT with the project. Its provenance is recorded in the [default Pet pack](public/default-pet-pack/README.md).
 
 ## Requirements
 
@@ -186,7 +186,17 @@ Claude Code is the only supported Agent integration in the first release. Codex 
 
 ## License and independence
 
-OpenAgentPet is an independent open-source project and is not affiliated with or endorsed by Anthropic. Project-owned source is released under the [MIT licensing decision](docs/adr/0009-release-openagentpet-under-mit-with-local-pet-packs.md). That statement does not apply to the current default Pet artwork while its rights are being verified.
+OpenAgentPet is an independent open-source project and is not affiliated with or endorsed by Anthropic. The project-owned source and default Pet pack artwork are released under the [MIT License](LICENSE). Dependencies retain their own licenses; npm installs Electron as a separate dependency.
+
+## Release validation
+
+Maintainers can validate the npm artifact, Claude Code marketplace, command behavior, and native macOS windows with:
+
+```sh
+npm run test:release
+```
+
+The release check packs and installs the tarball in a temporary prefix, runs the macOS smoke test against that installed package, installs the plugin at user scope in an isolated Claude Code configuration, executes the unit tests, and validates the marketplace metadata.
 
 ## Contributing
 

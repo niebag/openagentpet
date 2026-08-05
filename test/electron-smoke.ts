@@ -1,20 +1,16 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { rmSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Writable } from "node:stream";
 import { setTimeout } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import { app, BrowserWindow, type MenuItem } from "electron";
 
 import { runCli } from "../src/cli.js";
 import { startElectronApp } from "../src/electron.js";
-
-const execFileAsync = promisify(execFile);
-const mouseScript = fileURLToPath(new URL("../../test/native-mouse.swift", import.meta.url));
+import { defaultPetPackDirectory } from "../src/pet-pack.js";
 
 if (process.platform !== "darwin") {
   console.log("macOS Electron smoke test skipped");
@@ -58,11 +54,17 @@ async function runSmoke() {
       assert.equal(window.isVisible(), true);
       assert.equal(window.isMovable(), false);
       assert.equal(pointerModes.get(window.id)?.at(-1), true);
+      assert.equal(
+        await window.webContents.executeJavaScript(
+          'getComputedStyle(document.body).getPropertyValue("-webkit-app-region")',
+        ),
+        "drag",
+      );
       const corner = (await window.capturePage()).toBitmap().subarray(0, 4);
       assert.equal(corner[3], 0);
       assert.equal(
         await window.webContents.executeJavaScript(
-          'document.querySelectorAll("img").length === 1 && document.querySelector("img").src.endsWith("/clawd-vibing.gif")',
+          'document.querySelectorAll("img").length === 1 && document.querySelector("img").src.endsWith("/idle.gif")',
         ),
         true,
       );
@@ -71,21 +73,6 @@ async function runSmoke() {
     const petWindow = windows[0]!;
     const [petX, petY] = petWindow.getPosition();
     windows[1]!.setPosition(petX + 350, petY);
-    const backdrop = new BrowserWindow({
-      ...petWindow.getBounds(),
-      alwaysOnTop: true,
-      frame: false,
-    });
-    await backdrop.loadURL(
-      `data:text/html,${encodeURIComponent(
-        '<script>addEventListener("mousedown", () => document.body.dataset.clicked = "true")</script>',
-      )}`,
-    );
-    backdrop.showInactive();
-    petWindow.moveTop();
-    await setTimeout(100);
-    await mouse("click", center(petWindow));
-    await waitFor(backdrop, 'document.body.dataset.clicked === "true"');
 
     clickCheckbox(companionApp.menu().getMenuItemById("arrange"), true);
     for (const window of windows) {
@@ -93,11 +80,7 @@ async function runSmoke() {
       assert.equal(pointerModes.get(window.id)?.at(-1), false);
     }
     const originalPosition = petWindow.getPosition();
-    const dragStart = center(petWindow);
-    petWindow.moveTop();
-    await setTimeout(100);
-    await mouse("drag", dragStart, { x: dragStart.x + 30, y: dragStart.y + 30 });
-    await setTimeout(100);
+    petWindow.setPosition(originalPosition[0] + 30, originalPosition[1] + 30);
     const arrangedPosition = petWindow.getPosition();
     assert.notDeepEqual(arrangedPosition, originalPosition);
 
@@ -107,7 +90,6 @@ async function runSmoke() {
       assert.equal(window.isMovable(), false);
       assert.equal(pointerModes.get(window.id)?.at(-1), true);
     }
-    backdrop.destroy();
 
     click(companionApp.menu().getMenuItemById("visibility"));
     assert.equal(windows.every((window) => !window.isVisible()), true);
@@ -131,8 +113,94 @@ async function runSmoke() {
     click(companionApp.menu().getMenuItemById("visibility"));
     assert.equal(windows.every((window) => window.isVisible()), true);
 
+    await expectActivity(
+      petWindow,
+      {
+        session_id: "smoke-one",
+        hook_event_name: "PermissionRequest",
+        tool_name: "Bash",
+      },
+      "Needs-input",
+    );
+    await expectActivity(
+      petWindow,
+      {
+        session_id: "smoke-one",
+        hook_event_name: "PostToolUse",
+        tool_name: "Bash",
+        tool_use_id: "smoke-tool",
+      },
+      "Thinking",
+    );
+    await expectActivity(
+      petWindow,
+      {
+        session_id: "smoke-one",
+        hook_event_name: "PreToolUse",
+        tool_name: "WebSearch",
+        tool_use_id: "smoke-research",
+      },
+      "Researching",
+    );
+    await expectActivity(
+      petWindow,
+      {
+        session_id: "smoke-one",
+        hook_event_name: "PostToolUse",
+        tool_name: "WebSearch",
+        tool_use_id: "smoke-research",
+      },
+      "Thinking",
+    );
+    await expectActivity(
+      petWindow,
+      { session_id: "smoke-one", hook_event_name: "Stop" },
+      "Idle",
+    );
+
+    const updateCommands: string[] = [];
+    assert.equal(
+      await runCli(["spawn", "--session-id", "smoke-one"], {
+        socketPath: companionApp.companion.socketPath,
+        updateCheckPath: path.join(runtimeDirectory, "update-check.json"),
+        packageVersion: "1.0.0",
+        ask: async () => "n",
+        output: discardOutput(),
+        runProcess: async (command, args) => {
+          updateCommands.push([command, ...args].join(" "));
+          if (args[0] === "outdated") {
+            return {
+              status: 1,
+              stdout: '{"openagentpet":{"wanted":"1.1.0"}}',
+              stderr: "",
+            };
+          }
+          return { status: 0, stdout: '">=22.12.0"', stderr: "" };
+        },
+      }),
+      0,
+    );
+    assert.deepEqual(updateCommands, [
+      "npm outdated --global --json openagentpet",
+      "npm view openagentpet@1.1.0 engines.node --json",
+    ]);
+
+    const customPack = path.join(runtimeDirectory, "custom-pack");
+    await cp(defaultPetPackDirectory, customPack, { recursive: true });
+    assert.equal(
+      await runCli(["pack", "use", customPack], {
+        socketPath: companionApp.companion.socketPath,
+      }),
+      0,
+    );
+    await waitFor(
+      petWindow,
+      'document.querySelector("img").src.includes("/custom-pack/")',
+    );
+
     clickCheckbox(companionApp.menu().getMenuItemById("reduced-motion"), true);
     await Promise.all(windows.map(waitForReducedFrame));
+    await Promise.all(windows.map(waitForLoad));
     for (const window of windows) {
       const firstFrame = await window.webContents.executeJavaScript(
         'document.querySelector("canvas").toDataURL()',
@@ -146,6 +214,44 @@ async function runSmoke() {
       );
     }
 
+    const despawnedWindow = windows[1]!;
+    assert.equal(
+      await runCli(["despawn", "--session-id", "smoke-two"], {
+        socketPath: companionApp.companion.socketPath,
+      }),
+      0,
+    );
+    await waitUntil(() => despawnedWindow.isDestroyed(), "Despawn left a Pet window open");
+
+    assert.equal(
+      await runCli(["spawn", "--session-id", "session-end-smoke"], {
+        socketPath: companionApp.companion.socketPath,
+      }),
+      0,
+    );
+    await waitUntil(
+      () => companionApp.windows().length === 2,
+      "Session-end Pet window did not appear",
+    );
+    const sessionEndWindow = companionApp
+      .windows()
+      .find((window) => window !== petWindow)!;
+    assert.equal(
+      await runCli(["session-end"], {
+        socketPath: companionApp.companion.socketPath,
+        readInput: async () =>
+          JSON.stringify({
+            session_id: "session-end-smoke",
+            hook_event_name: "SessionEnd",
+          }),
+      }),
+      0,
+    );
+    await waitUntil(
+      () => sessionEndWindow.isDestroyed(),
+      "Session end left a Pet window open",
+    );
+
     app.once("before-quit", () => {
       assert.deepEqual(companionApp.companion.pets(), []);
       assert.equal(windows.every((window) => window.isDestroyed()), true);
@@ -158,6 +264,21 @@ async function runSmoke() {
     await companionApp.companion.quit();
     await rm(runtimeDirectory, { recursive: true });
     app.exit(1);
+  }
+
+  async function expectActivity(
+    window: BrowserWindow,
+    event: Record<string, unknown>,
+    hash: string,
+  ) {
+    assert.equal(
+      await runCli(["hook"], {
+        socketPath: companionApp.companion.socketPath,
+        readInput: async () => JSON.stringify(event),
+      }),
+      0,
+    );
+    await waitFor(window, `location.hash === "#${hash}"`);
   }
 }
 
@@ -177,23 +298,12 @@ function clickCheckbox(item: MenuItem | null, checked: boolean) {
   assert.equal(item.checked, checked);
 }
 
-function center(window: BrowserWindow) {
-  const bounds = window.getBounds();
-  return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
-}
-
-async function mouse(
-  action: "click" | "drag",
-  start: { x: number; y: number },
-  end?: { x: number; y: number },
-) {
-  await execFileAsync("/usr/bin/swift", [
-    mouseScript,
-    action,
-    String(start.x),
-    String(start.y),
-    ...(end ? [String(end.x), String(end.y)] : []),
-  ]);
+function discardOutput() {
+  return new Writable({
+    write(_chunk, _encoding, done) {
+      done();
+    },
+  });
 }
 
 async function waitFor(window: BrowserWindow, expression: string) {

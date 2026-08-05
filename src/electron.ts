@@ -56,6 +56,13 @@ export async function startElectronApp({
       },
     });
 
+  const reportLoadError = (window: BrowserWindow, error: unknown) => {
+    if (
+      !window.isDestroyed() &&
+      (error as { code?: string }).code !== "ERR_ABORTED"
+    ) console.error(error);
+  };
+
   const setMenu = () => {
     const template: MenuItemConstructorOptions[] = [
       {
@@ -88,7 +95,9 @@ export async function startElectronApp({
         click: (item) => {
           reducedMotion = item.checked;
           for (const { window, pet, pack } of windows.values()) {
-            void loadPet(window, pet, pack).catch(console.error);
+            void loadPet(window, pet, pack).catch((error) =>
+              reportLoadError(window, error),
+            );
           }
         },
       },
@@ -121,7 +130,9 @@ export async function startElectronApp({
         onClosed();
       });
       windows.set(pet.sessionId, { window, pet, pack });
-      void loadPet(window, pet, pack).catch(console.error);
+      void loadPet(window, pet, pack).catch((error) =>
+        reportLoadError(window, error),
+      );
     },
     refreshWindow: (pet, pack) => {
       const entry = windows.get(pet.sessionId);
@@ -131,7 +142,7 @@ export async function startElectronApp({
           .then(() => {
             if (!hidden) entry.window.showInactive();
           })
-          .catch(console.error);
+          .catch((error) => reportLoadError(entry.window, error));
       }
     },
     removeWindow: (sessionId) => {
