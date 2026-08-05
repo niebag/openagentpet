@@ -9,7 +9,9 @@
     "build": "tsc",
     "dev": "npm run build && node dist/src/cli.js spawn --session-id local-development",
     "start": "npm run build && electron dist/src/electron.js",
-    "test": "npm run build && node --test dist/test/*.test.js",
+    "test": "npm run test:unit && npm run test:smoke",
+    "test:unit": "npm run build && node --test dist/test/*.test.js",
+    "test:smoke": "npm run build && electron dist/test/electron-smoke.js",
     "typecheck": "tsc --noEmit",
     "prepare": "husky"
   },
