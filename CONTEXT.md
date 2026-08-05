@@ -42,9 +42,9 @@ _Avoid_: blocked, waiting for feedback
 The Activity state shown after Spawn and after a Claude Code turn completes, until another observable activity begins or the Pet is Despawned.
 _Avoid_: finished, inactive
 
-**Arrange mode**:
-The temporary tray-controlled mode in which Pets accept pointer input so the user can reposition them. Outside this mode, Pets are click-through.
-_Avoid_: edit mode, drag mode
+**Locked**:
+The global interaction state in which Pets keep their current position and size and are click-through. Pets are unlocked by default, allowing the user to reposition and resize them.
+_Avoid_: Arrange mode, edit mode, drag mode
 
 **Hidden**:
 A global display mode in which no Pet is visible but each Pet instance continues to receive Activity state updates.
@@ -55,7 +55,7 @@ The accessibility mode in which a Pet displays a static image for its current Ac
 _Avoid_: paused, hidden
 
 **Companion app**:
-The single local macOS application that manages all Pet instances and their shared tray controls.
+The single local macOS accessory application that manages all Pet instances and their shared tray controls. It lives only in the tray, with no Dock icon, Cmd+Tab entry, or normal application menu bar.
 _Avoid_: pet process, per-session app
 
 **Session identifier**:
@@ -81,6 +81,10 @@ _Avoid_: native installer, DMG
 **Pet instance**:
 One Pet created for exactly one Claude Code session. Several Pet instances may be visible at once when several sessions have been spawned.
 _Avoid_: global pet, shared pet
+
+**Pet label**:
+The read-only name shown beneath a Pet, captured from the basename of the Claude Code session's working directory when the Pet is Spawned. It is display context only and does not identify or bind the session.
+_Avoid_: session name, workspace binding, project identifier
 
 **Session binding**:
 The fixed relationship between a Pet instance and the Claude Code session that created it.
