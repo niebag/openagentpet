@@ -1,14 +1,20 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { rmSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import { app, BrowserWindow, type MenuItem } from "electron";
 
 import { runCli } from "../src/cli.js";
 import { startElectronApp } from "../src/electron.js";
+
+const execFileAsync = promisify(execFile);
+const mouseScript = fileURLToPath(new URL("../../test/native-mouse.swift", import.meta.url));
 
 if (process.platform !== "darwin") {
   console.log("macOS Electron smoke test skipped");
@@ -28,7 +34,7 @@ async function runSmoke() {
   };
 
   const runtimeDirectory = await mkdtemp(path.join(os.tmpdir(), "openagentpet-smoke-"));
-  const desktop = await startElectronApp({
+  const companionApp = await startElectronApp({
     socketPath: path.join(runtimeDirectory, "control.sock"),
   });
 
@@ -36,15 +42,16 @@ async function runSmoke() {
     for (const sessionId of ["smoke-one", "smoke-two"]) {
       assert.equal(
         await runCli(["spawn", "--session-id", sessionId], {
-          socketPath: desktop.companion.socketPath,
+          socketPath: companionApp.companion.socketPath,
         }),
         0,
       );
     }
 
-    const windows = desktop.windows();
+    const windows = companionApp.windows();
     assert.equal(windows.length, 2);
     await Promise.all(windows.map(waitForLoad));
+    await Promise.all(windows.map(waitForVisible));
     for (const window of windows) {
       assert.equal(window.isAlwaysOnTop(), true);
       assert.equal(window.isVisible(), true);
@@ -54,27 +61,52 @@ async function runSmoke() {
       assert.equal(corner[3], 0);
     }
 
-    clickCheckbox(desktop.menu().getMenuItemById("arrange"), true);
+    const petWindow = windows[0]!;
+    const [petX, petY] = petWindow.getPosition();
+    windows[1]!.setPosition(petX + 350, petY);
+    const backdrop = new BrowserWindow({
+      ...petWindow.getBounds(),
+      alwaysOnTop: true,
+      frame: false,
+    });
+    await backdrop.loadURL(
+      `data:text/html,${encodeURIComponent(
+        '<script>addEventListener("mousedown", () => document.body.dataset.clicked = "true")</script>',
+      )}`,
+    );
+    backdrop.showInactive();
+    petWindow.moveTop();
+    await setTimeout(100);
+    await mouse("click", center(petWindow));
+    await waitFor(backdrop, 'document.body.dataset.clicked === "true"');
+
+    clickCheckbox(companionApp.menu().getMenuItemById("arrange"), true);
     for (const window of windows) {
       assert.equal(window.isMovable(), true);
       assert.equal(pointerModes.get(window.id)?.at(-1), false);
     }
-    const [x, y] = windows[0]!.getPosition();
-    windows[0]!.setPosition(x + 10, y + 10);
-    const arrangedPosition = windows[0]!.getPosition();
+    const originalPosition = petWindow.getPosition();
+    const dragStart = center(petWindow);
+    petWindow.moveTop();
+    await setTimeout(100);
+    await mouse("drag", dragStart, { x: dragStart.x + 30, y: dragStart.y + 30 });
+    await setTimeout(100);
+    const arrangedPosition = petWindow.getPosition();
+    assert.notDeepEqual(arrangedPosition, originalPosition);
 
-    clickCheckbox(desktop.menu().getMenuItemById("arrange"), false);
-    assert.deepEqual(windows[0]!.getPosition(), arrangedPosition);
+    clickCheckbox(companionApp.menu().getMenuItemById("arrange"), false);
+    assert.deepEqual(petWindow.getPosition(), arrangedPosition);
     for (const window of windows) {
       assert.equal(window.isMovable(), false);
       assert.equal(pointerModes.get(window.id)?.at(-1), true);
     }
+    backdrop.destroy();
 
-    click(desktop.menu().getMenuItemById("visibility"));
+    click(companionApp.menu().getMenuItemById("visibility"));
     assert.equal(windows.every((window) => !window.isVisible()), true);
     assert.equal(
       await runCli(["hook"], {
-        socketPath: desktop.companion.socketPath,
+        socketPath: companionApp.companion.socketPath,
         readInput: async () =>
           JSON.stringify({
             session_id: "smoke-one",
@@ -89,22 +121,34 @@ async function runSmoke() {
     assert.equal(windows[0]!.isVisible(), false);
     assert.equal(await windows[0]!.webContents.executeJavaScript("location.hash"), "#Working");
 
-    click(desktop.menu().getMenuItemById("visibility"));
+    click(companionApp.menu().getMenuItemById("visibility"));
     assert.equal(windows.every((window) => window.isVisible()), true);
 
-    clickCheckbox(desktop.menu().getMenuItemById("reduced-motion"), true);
+    clickCheckbox(companionApp.menu().getMenuItemById("reduced-motion"), true);
     await Promise.all(windows.map(waitForReducedFrame));
+    for (const window of windows) {
+      const firstFrame = await window.webContents.executeJavaScript(
+        'document.querySelector("canvas").toDataURL()',
+      );
+      await setTimeout(500);
+      assert.equal(
+        await window.webContents.executeJavaScript(
+          'document.querySelector("canvas").toDataURL()',
+        ),
+        firstFrame,
+      );
+    }
 
     app.once("before-quit", () => {
-      assert.deepEqual(desktop.companion.pets(), []);
+      assert.deepEqual(companionApp.companion.pets(), []);
       assert.equal(windows.every((window) => window.isDestroyed()), true);
       rmSync(runtimeDirectory, { recursive: true });
       console.log("macOS Electron smoke test passed");
     });
-    click(desktop.menu().getMenuItemById("quit"));
+    click(companionApp.menu().getMenuItemById("quit"));
   } catch (error) {
     console.error(error);
-    await desktop.companion.quit();
+    await companionApp.companion.quit();
     await rm(runtimeDirectory, { recursive: true });
     app.exit(1);
   }
@@ -126,34 +170,58 @@ function clickCheckbox(item: MenuItem | null, checked: boolean) {
   assert.equal(item.checked, checked);
 }
 
+function center(window: BrowserWindow) {
+  const bounds = window.getBounds();
+  return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+}
+
+async function mouse(
+  action: "click" | "drag",
+  start: { x: number; y: number },
+  end?: { x: number; y: number },
+) {
+  await execFileAsync("/usr/bin/swift", [
+    mouseScript,
+    action,
+    String(start.x),
+    String(start.y),
+    ...(end ? [String(end.x), String(end.y)] : []),
+  ]);
+}
+
+async function waitFor(window: BrowserWindow, expression: string) {
+  await waitUntil(
+    () => window.webContents.executeJavaScript(expression),
+    `Timed out waiting for ${expression}`,
+  );
+}
+
 async function waitForLoad(window: BrowserWindow) {
-  for (let attempt = 0; attempt < 100 && window.webContents.isLoadingMainFrame(); attempt += 1) {
-    await setTimeout(10);
-  }
+  await waitUntil(() => !window.webContents.isLoadingMainFrame(), "Pet page did not load");
   await setTimeout(50);
 }
 
+async function waitForVisible(window: BrowserWindow) {
+  await waitUntil(() => window.isVisible(), "Pet window did not become visible");
+}
+
 async function waitForReducedFrame(window: BrowserWindow) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  await waitUntil(async () => {
     try {
-      const ready = await window.webContents.executeJavaScript(`
-        document.querySelector("img:target")?.hidden === true &&
-        document.querySelector("canvas")?.hidden === false
-      `);
-      if (ready) return;
+      return await window.webContents.executeJavaScript(`
+          document.querySelector("img:target")?.hidden === true &&
+          document.querySelector("canvas")?.hidden === false
+        `);
     } catch {
-      // Navigation replaces the execution context while Reduced motion loads.
+      return false;
     }
+  }, "Reduced motion did not render a stable frame");
+}
+
+async function waitUntil(check: () => boolean | Promise<boolean>, failure: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (await check()) return;
     await setTimeout(10);
   }
-  const state = await window.webContents.executeJavaScript(`({
-    href: location.href,
-    image: document.querySelector("img:target") && {
-      complete: document.querySelector("img:target").complete,
-      hidden: document.querySelector("img:target").hidden,
-      width: document.querySelector("img:target").naturalWidth
-    },
-    canvasHidden: document.querySelector("canvas")?.hidden
-  })`);
-  assert.fail(`Reduced motion did not render a stable frame: ${JSON.stringify(state)}`);
+  assert.fail(failure);
 }
