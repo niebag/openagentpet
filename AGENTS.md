@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues and specs use local Markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
+Issues and PRDs use GitHub Issues. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
