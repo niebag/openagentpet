@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { Writable } from "node:stream";
 import test from "node:test";
 
@@ -153,6 +154,87 @@ test("rerunning install repairs only a missing Claude Code plugin", async () => 
   ]);
 });
 
+test("rerunning install enables a disabled current plugin", async () => {
+  const commands: string[] = [];
+  const runProcess = installedRunner(commands, "1.2.3", "1.2.3", false);
+
+  assert.equal(
+    await runCli(["install"], {
+      platform: "darwin",
+      nodeVersion: "22.12.0",
+      packageVersion: "1.2.3",
+      ask: answers("1", "y"),
+      output: captureOutput(),
+      runProcess,
+    }),
+    0,
+  );
+  assert.deepEqual(commands.filter(isChangingCommand), [
+    "claude plugin enable openagentpet@openagentpet --scope user",
+  ]);
+});
+
+test("rerunning install repairs only the missing or outdated component", async () => {
+  const cases = [
+    {
+      runProcess: (commands: string[]) =>
+        installedRunner(commands, "1.2.3", "1.2.3", true, false),
+      expected: ["claude plugin marketplace add niebag/openagentpet --scope user"],
+    },
+    {
+      runProcess: (commands: string[]) =>
+        installedRunner(commands, "1.0.0", "1.2.3"),
+      expected: ["npm install --global openagentpet@1.2.3"],
+    },
+  ];
+
+  for (const { runProcess, expected } of cases) {
+    const commands: string[] = [];
+    assert.equal(
+      await runCli(["install"], {
+        platform: "darwin",
+        nodeVersion: "22.12.0",
+        packageVersion: "1.2.3",
+        ask: answers("1", "y"),
+        output: captureOutput(),
+        runProcess: runProcess(commands),
+      }),
+      0,
+    );
+    assert.deepEqual(commands.filter(isChangingCommand), expected);
+  }
+});
+
+test("the installed plugin exposes Spawn, Despawn, and Activity hooks", async () => {
+  const pluginUrl = new URL("../../plugin/", import.meta.url);
+  const [spawn, despawn, hooksJson] = await Promise.all([
+    readFile(new URL("skills/spawn/SKILL.md", pluginUrl), "utf8"),
+    readFile(new URL("skills/despawn/SKILL.md", pluginUrl), "utf8"),
+    readFile(new URL("hooks/hooks.json", pluginUrl), "utf8"),
+  ]);
+  const hooks = JSON.parse(hooksJson) as {
+    hooks: Record<string, Array<{ hooks: Array<{ command: string; args: string[] }> }>>;
+  };
+
+  assert.match(spawn, /openagentpet spawn --session-id/);
+  assert.match(despawn, /openagentpet despawn --session-id/);
+  assert.deepEqual(Object.keys(hooks.hooks), [
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PermissionRequest",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "Stop",
+    "SessionEnd",
+  ]);
+  for (const [event, entries] of Object.entries(hooks.hooks)) {
+    assert.equal(entries[0]?.hooks[0]?.command, "openagentpet");
+    assert.deepEqual(entries[0]?.hooks[0]?.args, [
+      event === "SessionEnd" ? "session-end" : "hook",
+    ]);
+  }
+});
+
 function prerequisiteRunner(commands: string[]) {
   return async (command: string, args: string[]) => {
     commands.push([command, ...args].join(" "));
@@ -174,6 +256,8 @@ function installedRunner(
   commands: string[],
   companionVersion: string,
   pluginVersion: string | null = companionVersion,
+  pluginEnabled = true,
+  marketplacePresent = true,
 ) {
   return async (command: string, args: string[]) => {
     commands.push([command, ...args].join(" "));
@@ -196,7 +280,11 @@ function installedRunner(
     if (args[1] === "marketplace" && args[2] === "list") {
       return {
         status: 0,
-        stdout: JSON.stringify([{ name: "openagentpet", repo: "niebag/openagentpet" }]),
+        stdout: JSON.stringify(
+          marketplacePresent
+            ? [{ name: "openagentpet", repo: "niebag/openagentpet" }]
+            : [],
+        ),
         stderr: "",
       };
     }
@@ -205,7 +293,12 @@ function installedRunner(
         status: 0,
         stdout: JSON.stringify(
           pluginVersion
-            ? [{ id: "openagentpet@openagentpet", version: pluginVersion, scope: "user" }]
+            ? [{
+                id: "openagentpet@openagentpet",
+                version: pluginVersion,
+                scope: "user",
+                enabled: pluginEnabled,
+              }]
             : [],
         ),
         stderr: "",
@@ -220,7 +313,7 @@ function answers(...values: string[]) {
 }
 
 function isChangingCommand(command: string) {
-  return / install | marketplace (add|update) | plugin update /.test(command);
+  return / install | marketplace (add|update) | plugin (update|enable) /.test(command);
 }
 
 function captureOutput() {

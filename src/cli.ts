@@ -129,7 +129,13 @@ export async function runCli(
       const pluginVersion = isRecord(plugin) ? plugin.version : undefined;
       const companionNeedsUpdate = companionVersion !== packageVersion;
       const pluginNeedsUpdate = pluginVersion !== packageVersion;
-      if (!companionNeedsUpdate && marketplaceCurrent && !pluginNeedsUpdate) {
+      const pluginNeedsEnable = isRecord(plugin) && plugin.enabled === false;
+      if (
+        !companionNeedsUpdate &&
+        marketplaceCurrent &&
+        !pluginNeedsUpdate &&
+        !pluginNeedsEnable
+      ) {
         output.write("OpenAgentPet is already installed and up to date.\n");
         return 0;
       }
@@ -164,6 +170,12 @@ export async function runCli(
         actions.push([
           "claude",
           ["plugin", "update", "openagentpet@openagentpet", "--scope", "user"],
+        ]);
+      }
+      if (pluginNeedsEnable) {
+        actions.push([
+          "claude",
+          ["plugin", "enable", "openagentpet@openagentpet", "--scope", "user"],
         ]);
       }
       for (const [action, args] of actions) {
