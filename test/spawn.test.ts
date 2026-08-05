@@ -11,8 +11,11 @@ import type { Pet } from "../src/protocol.js";
 
 test("spawn creates one Idle Pet through the public command", async () => {
   const windowCreations: WindowCreation[] = [];
-  const { companion, cleanup } = await testCompanion((pet, options) =>
-    windowCreations.push({ pet, options }),
+  const windowRefreshes: Pet[] = [];
+  const { companion, cleanup } = await testCompanion(
+    (pet, options) => windowCreations.push({ pet, options }),
+    undefined,
+    (pet) => windowRefreshes.push(pet),
   );
 
   await companion.start();
@@ -51,6 +54,9 @@ test("spawn creates one Idle Pet through the public command", async () => {
     );
     assert.equal(windowCreations.length, 1);
     assert.equal(companion.pets().length, 1);
+    assert.deepEqual(windowRefreshes, [
+      { sessionId: "opaque-session", activity: "Idle" },
+    ]);
   } finally {
     await cleanup();
   }
@@ -72,6 +78,146 @@ test("spawn starts the Companion when it is not running", async () => {
     );
     assert.equal(windowCreations.length, 1);
     assert.deepEqual(companion.pets(), [{ sessionId: "new-session", activity: "Idle" }]);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("a closed Pet can be spawned again", async () => {
+  let windowCreations = 0;
+  let closeWindow: () => void = () => undefined;
+  const { companion, cleanup } = await testCompanion((_pet, _options, onClosed) => {
+    windowCreations += 1;
+    closeWindow = onClosed;
+  });
+
+  await companion.start();
+  try {
+    assert.equal(
+      await runCli(["spawn", "--session-id", "closed-session"], {
+        socketPath: companion.socketPath,
+      }),
+      0,
+    );
+    closeWindow();
+    assert.deepEqual(companion.pets(), []);
+
+    assert.equal(
+      await runCli(["spawn", "--session-id", "closed-session"], {
+        socketPath: companion.socketPath,
+      }),
+      0,
+    );
+    assert.equal(windowCreations, 2);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("sessions can spawn and despawn independently", async () => {
+  const windowRemovals: string[] = [];
+  const { companion, cleanup } = await testCompanion(
+    () => undefined,
+    (sessionId) => windowRemovals.push(sessionId),
+  );
+
+  await companion.start();
+  try {
+    for (const sessionId of ["first-session", "second-session"]) {
+      assert.equal(
+        await runCli(["spawn", "--session-id", sessionId], {
+          socketPath: companion.socketPath,
+        }),
+        0,
+      );
+    }
+    assert.deepEqual(companion.pets(), [
+      { sessionId: "first-session", activity: "Idle" },
+      { sessionId: "second-session", activity: "Idle" },
+    ]);
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      assert.equal(
+        await runCli(["despawn", "--session-id", "first-session"], {
+          socketPath: companion.socketPath,
+        }),
+        0,
+      );
+    }
+    assert.deepEqual(companion.pets(), [
+      { sessionId: "second-session", activity: "Idle" },
+    ]);
+    assert.deepEqual(windowRemovals, ["first-session"]);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("session end removes its Pet without relaunching the Companion", async () => {
+  const windowRemovals: string[] = [];
+  const { companion, cleanup } = await testCompanion(
+    () => undefined,
+    (sessionId) => windowRemovals.push(sessionId),
+  );
+  let companionStarts = 0;
+  const options = {
+    socketPath: companion.socketPath,
+    startCompanion: async () => {
+      companionStarts += 1;
+    },
+    readInput: async () =>
+      JSON.stringify({
+        session_id: "ending-session",
+        transcript_path: "/private/transcript.jsonl",
+        hook_event_name: "SessionEnd",
+        reason: "other",
+      }),
+  };
+
+  await companion.start();
+  try {
+    assert.equal(
+      await runCli(["spawn", "--session-id", "ending-session"], {
+        socketPath: companion.socketPath,
+      }),
+      0,
+    );
+    assert.equal(await runCli(["session-end"], options), 0);
+    assert.deepEqual(companion.pets(), []);
+    assert.deepEqual(windowRemovals, ["ending-session"]);
+
+    await companion.quit();
+    assert.equal(await runCli(["session-end"], options), 0);
+    assert.equal(companionStarts, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("quitting the Companion removes all Pets and restart starts empty", async () => {
+  const windowRemovals: string[] = [];
+  const { companion, cleanup } = await testCompanion(
+    () => undefined,
+    (sessionId) => windowRemovals.push(sessionId),
+  );
+
+  await companion.start();
+  try {
+    for (const sessionId of ["first-session", "second-session"]) {
+      assert.equal(
+        await runCli(["spawn", "--session-id", sessionId], {
+          socketPath: companion.socketPath,
+        }),
+        0,
+      );
+    }
+
+    await companion.quit();
+    assert.deepEqual(companion.pets(), []);
+    assert.deepEqual(windowRemovals, ["first-session", "second-session"]);
+
+    await companion.start();
+    assert.deepEqual(companion.pets(), []);
   } finally {
     await cleanup();
   }
@@ -111,17 +257,27 @@ test("invalid socket messages cannot create or change a Pet instance", async () 
 
 type WindowCreation = { pet: Pet; options: PetWindowOptions };
 
-async function testCompanion(createWindow: (pet: Pet, options: PetWindowOptions) => void) {
+async function testCompanion(
+  createWindow: (
+    pet: Pet,
+    options: PetWindowOptions,
+    onClosed: () => void,
+  ) => void,
+  removeWindow: (sessionId: string) => void = () => undefined,
+  refreshWindow: (pet: Pet) => void = () => undefined,
+) {
   const runtimeDirectory = await mkdtemp(path.join(os.tmpdir(), "openagentpet-test-"));
   const companion = createCompanion({
     createWindow,
+    removeWindow,
+    refreshWindow,
     socketPath: path.join(runtimeDirectory, "control.sock"),
   });
   return {
     companion,
     cleanup: async () => {
       try {
-        await companion.stop();
+        await companion.quit();
       } finally {
         await rm(runtimeDirectory, { recursive: true });
       }

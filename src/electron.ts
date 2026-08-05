@@ -8,7 +8,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   const windows = new Map<string, BrowserWindow>();
   const companion = createCompanion({
-    createWindow: (pet, options) => {
+    createWindow: (pet, options, onClosed) => {
       const window = new BrowserWindow({
         ...options,
         webPreferences: {
@@ -18,11 +18,23 @@ if (!app.requestSingleInstanceLock()) {
         },
       });
       window.once("ready-to-show", () => window.showInactive());
-      window.on("closed", () => windows.delete(pet.sessionId));
+      window.on("closed", () => {
+        windows.delete(pet.sessionId);
+        onClosed();
+      });
       windows.set(pet.sessionId, window);
       void window
         .loadFile(fileURLToPath(new URL("../../public/pet.html", import.meta.url)))
         .catch(console.error);
+    },
+    refreshWindow: (pet) => {
+      const window = windows.get(pet.sessionId);
+      window?.reload();
+      window?.showInactive();
+    },
+    removeWindow: (sessionId) => {
+      windows.get(sessionId)?.destroy();
+      windows.delete(sessionId);
     },
   });
 
@@ -31,7 +43,7 @@ if (!app.requestSingleInstanceLock()) {
     if (stopping) return;
     event.preventDefault();
     stopping = true;
-    void companion.stop().finally(() => app.quit());
+    void companion.quit().finally(() => app.quit());
   });
 
   void app
