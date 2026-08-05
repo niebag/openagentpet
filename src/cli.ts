@@ -34,7 +34,14 @@ type RunOptions = {
   input?: Readable;
   output?: Writable;
   selectionPath?: string;
+  platform?: NodeJS.Platform;
+  nodeVersion?: string;
+  runProcess?: (command: string, args: string[]) => Promise<ProcessResult>;
+  ask?: (prompt: string) => Promise<string>;
+  packageVersion?: string;
 };
+
+type ProcessResult = { status: number; stdout: string; stderr: string };
 
 export async function runCli(
   argv: string[],
@@ -47,9 +54,131 @@ export async function runCli(
     input = process.stdin,
     output = process.stdout,
     selectionPath = defaultPetPackSelectionPath,
+    platform = process.platform,
+    nodeVersion = process.versions.node,
+    runProcess = execute,
+    ask,
+    packageVersion = readPackageVersion(),
   }: RunOptions = {},
 ) {
   const [command, flag, sessionId, ...extra] = argv;
+  if (command === "install" && argv.length === 1) {
+    if (platform !== "darwin") {
+      writeError("OpenAgentPet requires macOS 13 or newer.");
+      return 1;
+    }
+    if (!versionAtLeast(nodeVersion, [22, 12])) {
+      writeError("OpenAgentPet requires Node.js 22.12 or newer. Update Node.js and retry.");
+      return 1;
+    }
+    const macOS = await runProcess("sw_vers", ["-productVersion"]);
+    if (macOS.status !== 0 || !versionAtLeast(macOS.stdout.trim(), [13])) {
+      writeError("OpenAgentPet requires macOS 13 or newer. Update macOS and retry.");
+      return 1;
+    }
+    const npm = await runProcess("npm", ["--version"]);
+    if (npm.status !== 0) {
+      writeError("OpenAgentPet: npm is required. Install npm and retry.");
+      return 1;
+    }
+    const prompt = ask ? undefined : createInterface({ input, output });
+    const question = ask ?? ((message: string) => prompt!.question(message));
+    try {
+      output.write("Agent integrations:\n1. Claude Code\n2. Codex (Coming soon)\n");
+      const integration = (await question("Select an Agent integration: ")).trim();
+      if (integration === "2") {
+        writeError("OpenAgentPet: Codex integration is not available yet.");
+        return 1;
+      }
+      if (integration !== "1") {
+        writeError("OpenAgentPet: Select Claude Code to continue.");
+        return 1;
+      }
+      const claude = await runProcess("claude", ["--version"]);
+      if (claude.status !== 0) {
+        writeError("OpenAgentPet requires Claude Code. Install it and retry.");
+        return 1;
+      }
+      const [npmList, marketplaceList, pluginList] = await Promise.all([
+        runProcess("npm", ["list", "--global", "--depth=0", "--json", "openagentpet"]),
+        runProcess("claude", ["plugin", "marketplace", "list", "--json"]),
+        runProcess("claude", ["plugin", "list", "--json"]),
+      ]);
+      const npmState = parseJson(npmList.stdout) as {
+        dependencies?: { openagentpet?: { version?: string } };
+      } | undefined;
+      const marketplaces = parseJson(marketplaceList.stdout);
+      const plugins = parseJson(pluginList.stdout);
+      if (!npmState || marketplaceList.status !== 0 || !Array.isArray(marketplaces) ||
+          pluginList.status !== 0 || !Array.isArray(plugins)) {
+        writeError("OpenAgentPet could not inspect the current installation. Check npm and Claude Code, then retry.");
+        return 1;
+      }
+      const companionVersion = npmState.dependencies?.openagentpet?.version;
+      const marketplace = marketplaces.find(
+        (entry) => isRecord(entry) && entry.name === "openagentpet",
+      );
+      const marketplaceCurrent =
+        isRecord(marketplace) && marketplace.repo === "niebag/openagentpet";
+      const plugin = plugins.find(
+        (entry) =>
+          isRecord(entry) &&
+          entry.id === "openagentpet@openagentpet" &&
+          entry.scope === "user",
+      );
+      const pluginVersion = isRecord(plugin) ? plugin.version : undefined;
+      const companionNeedsUpdate = companionVersion !== packageVersion;
+      const pluginNeedsUpdate = pluginVersion !== packageVersion;
+      if (!companionNeedsUpdate && marketplaceCurrent && !pluginNeedsUpdate) {
+        output.write("OpenAgentPet is already installed and up to date.\n");
+        return 0;
+      }
+      output.write(
+        companionVersion || pluginVersion
+          ? "OpenAgentPet will repair or update the local Companion app and Claude Code plugin for your user account.\n"
+          : "OpenAgentPet will install the local Companion app and the Claude Code plugin for your user account.\n",
+      );
+      const confirmed = (await question("Continue? [y/N] ")).trim().toLowerCase();
+      if (confirmed !== "y" && confirmed !== "yes") {
+        output.write("Installation cancelled.\n");
+        return 0;
+      }
+      const actions: Array<[string, string[]]> = [];
+      if (companionNeedsUpdate) {
+        actions.push(["npm", ["install", "--global", `openagentpet@${packageVersion}`]]);
+      }
+      if (!marketplaceCurrent) {
+        actions.push([
+          "claude",
+          ["plugin", "marketplace", "add", "niebag/openagentpet", "--scope", "user"],
+        ]);
+      } else if (pluginNeedsUpdate) {
+        actions.push(["claude", ["plugin", "marketplace", "update", "openagentpet"]]);
+      }
+      if (!plugin) {
+        actions.push([
+          "claude",
+          ["plugin", "install", "openagentpet@openagentpet", "--scope", "user"],
+        ]);
+      } else if (pluginNeedsUpdate) {
+        actions.push([
+          "claude",
+          ["plugin", "update", "openagentpet@openagentpet", "--scope", "user"],
+        ]);
+      }
+      for (const [action, args] of actions) {
+        const result = await runProcess(action, args);
+        if (result.status !== 0) {
+          writeError(`OpenAgentPet: ${result.stderr.trim() || "Installation failed"}`);
+          return 1;
+        }
+      }
+      output.write("OpenAgentPet is installed. Start a fresh Claude Code session and run /openagentpet:spawn.\n");
+      return 0;
+    } finally {
+      prompt?.close();
+    }
+  }
   const stateDirectory = path.dirname(socketPath);
   let message: Command;
   if (command === "pack" && flag === "use" && extra.length === 0) {
@@ -194,6 +323,48 @@ function launchCompanion() {
       resolve();
     });
   });
+}
+
+function versionAtLeast(version: string, minimum: number[]) {
+  const parts = version.split(".").map(Number);
+  if (parts.length < minimum.length || parts.some((part) => !Number.isInteger(part))) {
+    return false;
+  }
+  for (const [index, part] of minimum.entries()) {
+    if (parts[index]! > part) return true;
+    if (parts[index]! < part) return false;
+  }
+  return true;
+}
+
+function execute(command: string, args: string[]) {
+  return new Promise<ProcessResult>((resolve) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.once("error", (error) => resolve({ status: 127, stdout, stderr: error.message }));
+    child.once("close", (status) => resolve({ status: status ?? 1, stdout, stderr }));
+  });
+}
+
+function readPackageVersion() {
+  return (createRequire(import.meta.url)("../../package.json") as { version: string }).version;
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

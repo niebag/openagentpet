@@ -1,0 +1,15 @@
+{
+  "name": "openagentpet",
+  "owner": {
+    "name": "niebag"
+  },
+  "description": "Claude Code integration for the OpenAgentPet macOS Companion app",
+  "plugins": [
+    {
+      "name": "openagentpet",
+      "source": "./plugin",
+      "description": "Show local Claude Code activity as a floating Pet",
+      "version": "0.0.0"
+    }
+  ]
+}
