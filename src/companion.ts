@@ -3,7 +3,12 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
-import { MAX_MESSAGE_BYTES, parseCommand, type Pet } from "./protocol.js";
+import {
+  loadSelectedPetPack,
+  selectPetPack,
+  type PetPack,
+} from "./pet-pack.js";
+import { MAX_MESSAGE_BYTES, parseCommand, type Command, type Pet } from "./protocol.js";
 
 const runtimeDirectory = path.join(os.tmpdir(), `openagentpet-${process.getuid?.() ?? "user"}`);
 export const defaultSocketPath = path.join(runtimeDirectory, "control.sock");
@@ -26,10 +31,12 @@ type CompanionOptions = {
     pet: Pet,
     options: PetWindowOptions,
     onClosed: () => void,
+    pack: PetPack,
   ) => void;
-  refreshWindow: (pet: Pet) => void;
+  refreshWindow: (pet: Pet, pack: PetPack) => void;
   removeWindow: (sessionId: string) => void;
   socketPath?: string;
+  selectionPath?: string;
 };
 
 export function createCompanion({
@@ -37,9 +44,11 @@ export function createCompanion({
   refreshWindow,
   removeWindow,
   socketPath = defaultSocketPath,
+  selectionPath = path.join(path.dirname(socketPath), "selected-pack.json"),
 }: CompanionOptions) {
   const registry = new Map<string, Pet>();
-  const server = net.createServer((socket) => {
+  let activePack: PetPack;
+  const server = net.createServer({ allowHalfOpen: true }, (socket) => {
     let input = "";
     let handled = false;
 
@@ -65,28 +74,11 @@ export function createCompanion({
         return;
       }
       handled = true;
-      if (command.command === "spawn") {
-        const existingPet = registry.get(command.sessionId);
-        if (existingPet) {
-          existingPet.activity = "Idle";
-          refreshWindow(existingPet);
-        } else {
-          const pet = { sessionId: command.sessionId, activity: command.activity } satisfies Pet;
-          registry.set(pet.sessionId, pet);
-          createWindow(pet, idleWindowOptions, () => {
-            if (registry.get(pet.sessionId) === pet) registry.delete(pet.sessionId);
-          });
-        }
-      } else if (command.command === "activity") {
-        const pet = registry.get(command.sessionId);
-        if (pet && pet.activity !== command.activity) {
-          pet.activity = command.activity;
-          refreshWindow(pet);
-        }
-      } else {
-        if (registry.delete(command.sessionId)) removeWindow(command.sessionId);
-      }
-      socket.end('{"ok":true}\n');
+      void handleCommand(command)
+        .then(() => socket.end('{"ok":true}\n'))
+        .catch((error: Error) =>
+          socket.end(`${JSON.stringify({ ok: false, error: error.message })}\n`),
+        );
     });
     socket.on("end", () => {
       if (!handled) reject();
@@ -94,10 +86,44 @@ export function createCompanion({
     socket.on("error", () => undefined);
   });
 
+  async function handleCommand(command: Command) {
+    if (command.command === "pack-use") {
+      const pack = await selectPetPack(selectionPath, command.path);
+      activePack = pack;
+      for (const pet of registry.values()) refreshWindow(pet, activePack);
+    } else if (command.command === "spawn") {
+      const existingPet = registry.get(command.sessionId);
+      if (existingPet) {
+        existingPet.activity = "Idle";
+        refreshWindow(existingPet, activePack);
+      } else {
+        const pet = { sessionId: command.sessionId, activity: command.activity } satisfies Pet;
+        registry.set(pet.sessionId, pet);
+        createWindow(
+          pet,
+          idleWindowOptions,
+          () => {
+            if (registry.get(pet.sessionId) === pet) registry.delete(pet.sessionId);
+          },
+          activePack,
+        );
+      }
+    } else if (command.command === "activity") {
+      const pet = registry.get(command.sessionId);
+      if (pet && pet.activity !== command.activity) {
+        pet.activity = command.activity;
+        refreshWindow(pet, activePack);
+      }
+    } else if (registry.delete(command.sessionId)) {
+      removeWindow(command.sessionId);
+    }
+  }
+
   return {
     socketPath,
     pets: () => [...registry.values()],
     async start() {
+      activePack = await loadSelectedPetPack(selectionPath);
       await mkdir(path.dirname(socketPath), { recursive: true, mode: 0o700 });
       await chmod(path.dirname(socketPath), 0o700);
       try {

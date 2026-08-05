@@ -1,7 +1,15 @@
 export const PROTOCOL_VERSION = 1;
 export const MAX_MESSAGE_BYTES = 1024;
 
-export type Activity = "Idle" | "Thinking" | "Researching" | "Working" | "Needs input";
+export const ACTIVITIES = [
+  "Idle",
+  "Thinking",
+  "Researching",
+  "Working",
+  "Needs input",
+] as const;
+
+export type Activity = (typeof ACTIVITIES)[number];
 export type ToolActivity = "Researching" | "Working";
 
 export type Pet = {
@@ -27,7 +35,13 @@ export type ActivityCommand = {
   activity: Activity;
 };
 
-export type Command = SpawnCommand | RemoveCommand | ActivityCommand;
+export type PackUseCommand = {
+  version: typeof PROTOCOL_VERSION;
+  command: "pack-use";
+  path: string;
+};
+
+export type Command = SpawnCommand | RemoveCommand | ActivityCommand | PackUseCommand;
 
 export function spawnCommand(sessionId: string): SpawnCommand {
   return {
@@ -52,6 +66,10 @@ export function activityCommand(
   return { version: PROTOCOL_VERSION, command: "activity", sessionId, activity };
 }
 
+export function packUseCommand(packPath: string): PackUseCommand {
+  return { version: PROTOCOL_VERSION, command: "pack-use", path: packPath };
+}
+
 export function parseCommand(input: string): Command | undefined {
   if (Buffer.byteLength(input) > MAX_MESSAGE_BYTES) return undefined;
 
@@ -65,14 +83,21 @@ export function parseCommand(input: string): Command | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const command = value as Record<string, unknown>;
   const keys = Object.keys(command).sort();
+  if (command.version !== PROTOCOL_VERSION) return undefined;
   if (
-    command.version !== PROTOCOL_VERSION ||
+    command.command === "pack-use" &&
+    typeof command.path === "string" &&
+    command.path.length > 0 &&
+    command.path.length <= 768 &&
+    keys.join(",") === "command,path,version"
+  ) {
+    return command as PackUseCommand;
+  }
+  if (
     typeof command.sessionId !== "string" ||
     command.sessionId.length === 0 ||
     command.sessionId.length > 256
-  ) {
-    return undefined;
-  }
+  ) return undefined;
   if (
     command.command === "spawn" &&
     command.activity === "Idle" &&
@@ -88,11 +113,7 @@ export function parseCommand(input: string): Command | undefined {
   }
   if (
     command.command === "activity" &&
-    (command.activity === "Idle" ||
-      command.activity === "Thinking" ||
-      command.activity === "Researching" ||
-      command.activity === "Working" ||
-      command.activity === "Needs input") &&
+    ACTIVITIES.includes(command.activity as Activity) &&
     keys.join(",") === "activity,command,sessionId,version"
   ) {
     return command as ActivityCommand;

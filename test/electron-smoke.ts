@@ -36,6 +36,7 @@ async function runSmoke() {
   const runtimeDirectory = await mkdtemp(path.join(os.tmpdir(), "openagentpet-smoke-"));
   const companionApp = await startElectronApp({
     socketPath: path.join(runtimeDirectory, "control.sock"),
+    selectionPath: path.join(runtimeDirectory, "selection.json"),
   });
 
   try {
@@ -59,6 +60,12 @@ async function runSmoke() {
       assert.equal(pointerModes.get(window.id)?.at(-1), true);
       const corner = (await window.capturePage()).toBitmap().subarray(0, 4);
       assert.equal(corner[3], 0);
+      assert.equal(
+        await window.webContents.executeJavaScript(
+          'document.querySelectorAll("img").length === 1 && document.querySelector("img").src.endsWith("/clawd-vibing.gif")',
+        ),
+        true,
+      );
     }
 
     const petWindow = windows[0]!;
@@ -209,7 +216,7 @@ async function waitForReducedFrame(window: BrowserWindow) {
   await waitUntil(async () => {
     try {
       return await window.webContents.executeJavaScript(`
-          document.querySelector("img:target")?.hidden === true &&
+          document.querySelector("img")?.hidden === true &&
           document.querySelector("canvas")?.hidden === false
         `);
     } catch {
