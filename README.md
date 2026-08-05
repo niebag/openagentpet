@@ -9,7 +9,7 @@
   <a href="https://github.com/niebag/openagentpet/blob/main/package.json">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/dynamic/json.svg?url=https%3A%2F%2Fraw.githubusercontent.com%2Fniebag%2Fopenagentpet%2Fmain%2Fpackage.json&amp;query=%24.version&amp;label=npm&amp;logo=npm&amp;variant=secondary&amp;size=sm&amp;mode=dark" />
-      <img src="https://shieldcn.dev/badge/dynamic/json.svg?url=https%3A%2F%2Fraw.githubusercontent.com%2Fniebag%2Fopenagentpet%2Fmain%2Fpackage.json&amp;query=%24.version&amp;label=npm&amp;logo=npm&amp;variant=secondary&amp;size=sm&amp;mode=light" alt="npm package version from package.json, not yet published" />
+      <img src="https://shieldcn.dev/badge/dynamic/json.svg?url=https%3A%2F%2Fraw.githubusercontent.com%2Fniebag%2Fopenagentpet%2Fmain%2Fpackage.json&amp;query=%24.version&amp;label=npm&amp;logo=npm&amp;variant=secondary&amp;size=sm&amp;mode=light" alt="OpenAgentPet npm package version" />
     </picture>
   </a>
   <a href="docs/adr/0009-release-openagentpet-under-mit-with-local-pet-packs.md">
@@ -35,7 +35,7 @@
 OpenAgentPet turns observable activity from each local Claude Code session into a small animated Pet that floats above your macOS windows. It stays click-through while you work and sends no prompt or transcript data off your Mac.
 
 > [!NOTE]
-> OpenAgentPet 1.0.0 is the first public-release candidate. The quick-start command will work after that version is published to npm.
+> OpenAgentPet 1.0.0 is available from npm. The quick-start command installs the published release.
 
 ## Preview
 
