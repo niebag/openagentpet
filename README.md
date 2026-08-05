@@ -41,21 +41,25 @@ OpenAgentPet turns observable activity from each local Claude Code session into 
 
 <table align="center">
   <tr>
-    <th colspan="2" align="left">● ● ● &nbsp; macOS · Claude Code · local session</th>
+    <th colspan="5" align="left">● ● ● &nbsp; macOS · Claude Code · local session</th>
   </tr>
   <tr>
-    <td>
-      <code>/openagentpet:spawn</code><br /><br />
-      <strong>Working</strong><br />
-      <sub>A Claude Code tool is running</sub>
-    </td>
-    <td>
-      <img src="public/default-pet-pack/clawd-building.gif" width="280" alt="Clawd in the Working Activity state" />
-    </td>
+    <th>Idle</th>
+    <th>Thinking</th>
+    <th>Researching</th>
+    <th>Working</th>
+    <th>Needs input</th>
+  </tr>
+  <tr>
+    <td><img src="public/default-pet-pack/clawd-vibing.gif" width="160" alt="Clawd in the Idle Activity state" /></td>
+    <td><img src="public/default-pet-pack/clawd-thinking.gif" width="160" alt="Clawd in the Thinking Activity state" /></td>
+    <td><img src="public/default-pet-pack/clawd-researching.gif" width="160" alt="Clawd in the Researching Activity state" /></td>
+    <td><img src="public/default-pet-pack/clawd-building.gif" width="160" alt="Clawd in the Working Activity state" /></td>
+    <td><img src="public/default-pet-pack/clawd-idea.gif" width="160" alt="Clawd in the Needs input Activity state" /></td>
   </tr>
 </table>
 
-This is an illustrative preview. The real Pet has a transparent, always-on-top window that floats above ordinary macOS windows; it is not embedded in Claude Code. Each spawned local session gets its own Pet.
+These previews show the bundled default Pet pack. The real Pet has a transparent, always-on-top window that floats above ordinary macOS windows; it is not embedded in Claude Code. Each spawned local session gets its own Pet.
 
 ## Requirements
 
