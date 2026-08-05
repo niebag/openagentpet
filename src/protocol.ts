@@ -11,6 +11,14 @@ export type SpawnCommand = Pet & {
   command: "spawn";
 };
 
+export type RemoveCommand = {
+  version: typeof PROTOCOL_VERSION;
+  command: "despawn" | "session-end";
+  sessionId: string;
+};
+
+export type Command = SpawnCommand | RemoveCommand;
+
 export function spawnCommand(sessionId: string): SpawnCommand {
   return {
     version: PROTOCOL_VERSION,
@@ -20,7 +28,14 @@ export function spawnCommand(sessionId: string): SpawnCommand {
   };
 }
 
-export function parseCommand(input: string): SpawnCommand | undefined {
+export function removeCommand(
+  command: RemoveCommand["command"],
+  sessionId: string,
+): RemoveCommand {
+  return { version: PROTOCOL_VERSION, command, sessionId };
+}
+
+export function parseCommand(input: string): Command | undefined {
   if (Buffer.byteLength(input) > MAX_MESSAGE_BYTES) return undefined;
 
   let value: unknown;
@@ -33,16 +48,26 @@ export function parseCommand(input: string): SpawnCommand | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const command = value as Record<string, unknown>;
   const keys = Object.keys(command).sort();
-  if (keys.join(",") !== "activity,command,sessionId,version") return undefined;
   if (
     command.version !== PROTOCOL_VERSION ||
-    command.command !== "spawn" ||
-    command.activity !== "Idle" ||
     typeof command.sessionId !== "string" ||
     command.sessionId.length === 0 ||
     command.sessionId.length > 256
   ) {
     return undefined;
   }
-  return command as SpawnCommand;
+  if (
+    command.command === "spawn" &&
+    command.activity === "Idle" &&
+    keys.join(",") === "activity,command,sessionId,version"
+  ) {
+    return command as SpawnCommand;
+  }
+  if (
+    (command.command === "despawn" || command.command === "session-end") &&
+    keys.join(",") === "command,sessionId,version"
+  ) {
+    return command as RemoveCommand;
+  }
+  return undefined;
 }

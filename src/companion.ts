@@ -22,12 +22,20 @@ const idleWindowOptions = {
 export type PetWindowOptions = typeof idleWindowOptions;
 
 type CompanionOptions = {
-  createWindow: (pet: Pet, options: PetWindowOptions) => void;
+  createWindow: (
+    pet: Pet,
+    options: PetWindowOptions,
+    onClosed: () => void,
+  ) => void;
+  refreshWindow: (pet: Pet) => void;
+  removeWindow: (sessionId: string) => void;
   socketPath?: string;
 };
 
 export function createCompanion({
   createWindow,
+  refreshWindow,
+  removeWindow,
   socketPath = defaultSocketPath,
 }: CompanionOptions) {
   const registry = new Map<string, Pet>();
@@ -57,11 +65,20 @@ export function createCompanion({
         return;
       }
       handled = true;
-      const pet = { sessionId: command.sessionId, activity: command.activity } satisfies Pet;
-      const exists = registry.has(pet.sessionId);
-      registry.set(pet.sessionId, pet);
-      if (!exists) {
-        createWindow(pet, idleWindowOptions);
+      if (command.command === "spawn") {
+        const existingPet = registry.get(command.sessionId);
+        if (existingPet) {
+          existingPet.activity = command.activity;
+          refreshWindow(existingPet);
+        } else {
+          const pet = { sessionId: command.sessionId, activity: command.activity } satisfies Pet;
+          registry.set(pet.sessionId, pet);
+          createWindow(pet, idleWindowOptions, () => {
+            if (registry.get(pet.sessionId) === pet) registry.delete(pet.sessionId);
+          });
+        }
+      } else {
+        if (registry.delete(command.sessionId)) removeWindow(command.sessionId);
       }
       socket.end('{"ok":true}\n');
     });
@@ -94,7 +111,7 @@ export function createCompanion({
       });
       await chmod(socketPath, 0o600);
     },
-    async stop() {
+    async quit() {
       if (server.listening) {
         await new Promise<void>((resolve, reject) =>
           server.close((error) => (error ? reject(error) : resolve())),
@@ -103,6 +120,8 @@ export function createCompanion({
       await unlink(socketPath).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== "ENOENT") throw error;
       });
+      for (const sessionId of registry.keys()) removeWindow(sessionId);
+      registry.clear();
     },
   };
 }

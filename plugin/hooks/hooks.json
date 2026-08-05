@@ -1,0 +1,16 @@
+{
+  "description": "Remove a session's Pet when its Claude Code session ends",
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openagentpet",
+            "args": ["session-end"]
+          }
+        ]
+      }
+    ]
+  }
+}
