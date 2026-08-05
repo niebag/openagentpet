@@ -9,20 +9,29 @@ import {
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createCompanion, defaultSocketPath } from "./companion.js";
+import {
+  petPackSelectionPath as defaultPetPackSelectionPath,
+  type PetPack,
+} from "./pet-pack.js";
 import type { Pet } from "./protocol.js";
 
 const petPage = fileURLToPath(new URL("../../public/pet.html", import.meta.url));
 
 type ElectronAppOptions = {
   socketPath?: string;
+  selectionPath?: string;
 };
 
 export async function startElectronApp({
   socketPath = defaultSocketPath,
+  selectionPath = defaultPetPackSelectionPath,
 }: ElectronAppOptions = {}) {
   await app.whenReady();
 
-  const windows = new Map<string, { window: BrowserWindow; pet: Pet }>();
+  const windows = new Map<
+    string,
+    { window: BrowserWindow; pet: Pet; pack: PetPack }
+  >();
   let arranging = false;
   let hidden = false;
   let reducedMotion = false;
@@ -38,10 +47,13 @@ export async function startElectronApp({
     window.setMovable(arranging);
   };
 
-  const loadPet = (window: BrowserWindow, pet: Pet) =>
+  const loadPet = (window: BrowserWindow, pet: Pet, pack: PetPack) =>
     window.loadFile(petPage, {
       hash: pet.activity.replace(" ", "-"),
-      query: { reducedMotion: String(reducedMotion) },
+      query: {
+        asset: pathToFileURL(pack.assets[pet.activity]).href,
+        reducedMotion: String(reducedMotion),
+      },
     });
 
   const setMenu = () => {
@@ -75,8 +87,8 @@ export async function startElectronApp({
         checked: reducedMotion,
         click: (item) => {
           reducedMotion = item.checked;
-          for (const { window, pet } of windows.values()) {
-            void loadPet(window, pet).catch(console.error);
+          for (const { window, pet, pack } of windows.values()) {
+            void loadPet(window, pet, pack).catch(console.error);
           }
         },
       },
@@ -90,7 +102,8 @@ export async function startElectronApp({
 
   const companion = createCompanion({
     socketPath,
-    createWindow: (pet, options, onClosed) => {
+    selectionPath,
+    createWindow: (pet, options, onClosed, pack) => {
       const window = new BrowserWindow({
         ...options,
         webPreferences: {
@@ -107,13 +120,14 @@ export async function startElectronApp({
         windows.delete(pet.sessionId);
         onClosed();
       });
-      windows.set(pet.sessionId, { window, pet });
-      void loadPet(window, pet).catch(console.error);
+      windows.set(pet.sessionId, { window, pet, pack });
+      void loadPet(window, pet, pack).catch(console.error);
     },
-    refreshWindow: (pet) => {
+    refreshWindow: (pet, pack) => {
       const entry = windows.get(pet.sessionId);
       if (entry) {
-        void loadPet(entry.window, pet)
+        entry.pack = pack;
+        void loadPet(entry.window, pet, pack)
           .then(() => {
             if (!hidden) entry.window.showInactive();
           })

@@ -1,11 +1,10 @@
-if (new URLSearchParams(location.search).get("reducedMotion") === "true") {
-  const freeze = () => {
-    const image = document.querySelector("img:target");
-    if (!image) {
-      setTimeout(freeze, 0);
-      return;
-    }
+const parameters = new URLSearchParams(location.search);
+const image = document.querySelector("img");
+image.src = parameters.get("asset") ?? "";
+image.alt = `${decodeURIComponent(location.hash.slice(1)).replace("-", " ")} OpenAgentPet`;
 
+if (parameters.get("reducedMotion") === "true") {
+  const freeze = () => {
     const canvas = document.querySelector("canvas");
     const draw = () => {
       canvas.width = image.naturalWidth;
