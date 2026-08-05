@@ -1,9 +1,12 @@
 export const PROTOCOL_VERSION = 1;
 export const MAX_MESSAGE_BYTES = 1024;
 
+export type Activity = "Idle" | "Thinking" | "Researching" | "Working" | "Needs input";
+export type ToolActivity = "Researching" | "Working";
+
 export type Pet = {
   sessionId: string;
-  activity: "Idle";
+  activity: Activity;
 };
 
 export type SpawnCommand = Pet & {
@@ -17,7 +20,14 @@ export type RemoveCommand = {
   sessionId: string;
 };
 
-export type Command = SpawnCommand | RemoveCommand;
+export type ActivityCommand = {
+  version: typeof PROTOCOL_VERSION;
+  command: "activity";
+  sessionId: string;
+  activity: Activity;
+};
+
+export type Command = SpawnCommand | RemoveCommand | ActivityCommand;
 
 export function spawnCommand(sessionId: string): SpawnCommand {
   return {
@@ -33,6 +43,13 @@ export function removeCommand(
   sessionId: string,
 ): RemoveCommand {
   return { version: PROTOCOL_VERSION, command, sessionId };
+}
+
+export function activityCommand(
+  sessionId: string,
+  activity: Activity,
+): ActivityCommand {
+  return { version: PROTOCOL_VERSION, command: "activity", sessionId, activity };
 }
 
 export function parseCommand(input: string): Command | undefined {
@@ -68,6 +85,17 @@ export function parseCommand(input: string): Command | undefined {
     keys.join(",") === "command,sessionId,version"
   ) {
     return command as RemoveCommand;
+  }
+  if (
+    command.command === "activity" &&
+    (command.activity === "Idle" ||
+      command.activity === "Thinking" ||
+      command.activity === "Researching" ||
+      command.activity === "Working" ||
+      command.activity === "Needs input") &&
+    keys.join(",") === "activity,command,sessionId,version"
+  ) {
+    return command as ActivityCommand;
   }
   return undefined;
 }

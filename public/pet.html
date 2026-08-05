@@ -19,13 +19,26 @@
       }
 
       img {
+        display: none;
         width: 100%;
         height: 100%;
         object-fit: contain;
       }
+
+      img:target {
+        display: block;
+      }
     </style>
   </head>
   <body>
-    <img src="clawd-vibing.gif" alt="Idle OpenAgentPet" />
+    <img id="Idle" src="clawd-vibing.gif" alt="Idle OpenAgentPet" />
+    <img id="Thinking" src="clawd-thinking.gif" alt="Thinking OpenAgentPet" />
+    <img
+      id="Researching"
+      src="clawd-researching.gif"
+      alt="Researching OpenAgentPet"
+    />
+    <img id="Working" src="clawd-building.gif" alt="Working OpenAgentPet" />
+    <img id="Needs-input" src="clawd-idea.gif" alt="OpenAgentPet needs input" />
   </body>
 </html>

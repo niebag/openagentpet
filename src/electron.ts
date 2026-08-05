@@ -2,6 +2,13 @@ import { app, BrowserWindow } from "electron";
 import { fileURLToPath } from "node:url";
 
 import { createCompanion } from "./companion.js";
+import type { Pet } from "./protocol.js";
+
+const petPage = fileURLToPath(new URL("../../public/pet.html", import.meta.url));
+
+function loadPet(window: BrowserWindow, pet: Pet) {
+  return window.loadFile(petPage, { hash: pet.activity.replace(" ", "-") });
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -23,14 +30,13 @@ if (!app.requestSingleInstanceLock()) {
         onClosed();
       });
       windows.set(pet.sessionId, window);
-      void window
-        .loadFile(fileURLToPath(new URL("../../public/pet.html", import.meta.url)))
-        .catch(console.error);
+      void loadPet(window, pet).catch(console.error);
     },
     refreshWindow: (pet) => {
       const window = windows.get(pet.sessionId);
-      window?.reload();
-      window?.showInactive();
+      if (window) {
+        void loadPet(window, pet).then(() => window.showInactive()).catch(console.error);
+      }
     },
     removeWindow: (sessionId) => {
       windows.get(sessionId)?.destroy();
