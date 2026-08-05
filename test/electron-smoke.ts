@@ -64,7 +64,7 @@ async function runSmoke() {
       assert.equal(corner[3], 0);
       assert.equal(
         await window.webContents.executeJavaScript(
-          'document.querySelectorAll("img").length === 1 && document.querySelector("img").src.endsWith("/idle.gif")',
+          'document.querySelectorAll("img").length === 1 && document.querySelector("img").src.endsWith("/clawd-vibing.gif")',
         ),
         true,
       );

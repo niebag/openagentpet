@@ -50,14 +50,12 @@ OpenAgentPet turns observable activity from each local Claude Code session into 
       <sub>A Claude Code tool is running</sub>
     </td>
     <td>
-      <img src="public/default-pet-pack/working.gif" width="280" alt="The default OpenAgentPet robot in its Working Activity state" />
+      <img src="public/default-pet-pack/clawd-building.gif" width="280" alt="Clawd in the Working Activity state" />
     </td>
   </tr>
 </table>
 
 This is an illustrative preview. The real Pet has a transparent, always-on-top window that floats above ordinary macOS windows; it is not embedded in Claude Code. Each spawned local session gets its own Pet.
-
-The default robot artwork was generated for OpenAgentPet and is released under MIT with the project. Its provenance is recorded in the [default Pet pack](public/default-pet-pack/README.md).
 
 ## Requirements
 
@@ -184,9 +182,9 @@ These commands do not delete custom Pet packs or selection data under `~/Library
 
 Claude Code is the only supported Agent integration in the first release. Codex is **Coming soon**. OpenAgentPet does not currently support Claude Desktop, Claude on the web, or remote sessions.
 
-## License and independence
+## License
 
-OpenAgentPet is an independent open-source project and is not affiliated with or endorsed by Anthropic. The project-owned source and default Pet pack artwork are released under the [MIT License](LICENSE). Dependencies retain their own licenses; npm installs Electron as a separate dependency.
+Project-owned source is released under the [MIT License](LICENSE). The bundled Clawd GIFs are not covered by this license. Dependencies retain their own licenses; npm installs Electron as a separate dependency.
 
 ## Release validation
 
@@ -201,3 +199,7 @@ The release check packs and installs the tarball in a temporary prefix, runs the
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). OpenAgentPet uses Conventional Commits.
+
+## Disclaimer
+
+OpenAgentPet is an independent, unofficial project. It is not affiliated with, endorsed by, or sponsored by Anthropic. Claude, Claude Code, Clawd, Anthropic, and the bundled Clawd artwork belong to their respective owners.

@@ -45,24 +45,18 @@ test("the npm package and Claude Code marketplace publish the same release", asy
   assert.equal(pluginJson.version, packageJson.version);
 });
 
-test("the default Pet pack contains the public-release artwork", async () => {
+test("the default Pet pack contains the bundled Clawd artwork", async () => {
   const manifest = JSON.parse(
     await readFile(new URL("public/default-pet-pack/manifest.json", root), "utf8"),
   ) as { assets: Record<string, string> };
 
   assert.deepEqual(manifest.assets, {
-    Idle: "idle.gif",
-    Thinking: "thinking.gif",
-    Researching: "researching.gif",
-    Working: "working.gif",
-    "Needs input": "needs-input.gif",
+    Idle: "clawd-vibing.gif",
+    Thinking: "clawd-thinking.gif",
+    Researching: "clawd-researching.gif",
+    Working: "clawd-building.gif",
+    "Needs input": "clawd-idea.gif",
   });
-  const provenance = await readFile(
-    new URL("public/default-pet-pack/README.md", root),
-    "utf8",
-  );
-  assert.match(provenance, /generated for OpenAgentPet/i);
-  assert.match(provenance, /MIT/);
 });
 
 test("the public command reports its release version", async () => {

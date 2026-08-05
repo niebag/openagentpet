@@ -1,10 +1,10 @@
 {
   "name": "Default",
   "assets": {
-    "Idle": "idle.gif",
-    "Thinking": "thinking.gif",
-    "Researching": "researching.gif",
-    "Working": "working.gif",
-    "Needs input": "needs-input.gif"
+    "Idle": "clawd-vibing.gif",
+    "Thinking": "clawd-thinking.gif",
+    "Researching": "clawd-researching.gif",
+    "Working": "clawd-building.gif",
+    "Needs input": "clawd-idea.gif"
   }
 }
