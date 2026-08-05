@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import net from "node:net";
@@ -7,7 +8,7 @@ import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import type { Readable, Writable } from "node:stream";
 import { setTimeout } from "node:timers/promises";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import { activityForHook, resetHookState } from "./claude-code.js";
 import { defaultSocketPath } from "./companion.js";
@@ -71,6 +72,10 @@ export async function runCli(
   }: RunOptions = {},
 ) {
   const [command, flag, sessionId, ...extra] = argv;
+  if (command === "--version" && argv.length === 1) {
+    output.write(`${packageVersion}\n`);
+    return 0;
+  }
   if (command === "install" && argv.length === 1) {
     if (platform !== "darwin") {
       writeError("OpenAgentPet requires macOS 13 or newer.");
@@ -576,7 +581,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === realpathSync(process.argv[1])
+) {
   try {
     process.exitCode = await runCli(process.argv.slice(2));
   } catch (error) {

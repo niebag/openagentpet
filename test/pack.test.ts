@@ -14,11 +14,11 @@ const transparentGif = await readFile(
   path.join(defaultPetPackDirectory, "clawd-vibing.gif"),
 );
 const packAssets = {
-  Idle: "idle.gif",
-  Thinking: "thinking.gif",
-  Researching: "researching.gif",
-  Working: "working.gif",
-  "Needs input": "needs-input.gif",
+  Idle: "clawd-vibing.gif",
+  Thinking: "clawd-thinking.gif",
+  Researching: "clawd-researching.gif",
+  Working: "clawd-building.gif",
+  "Needs input": "clawd-idea.gif",
 };
 
 test("the built-in default Pet pack provides every Activity state", async () => {
@@ -53,7 +53,7 @@ test("path selection updates existing and future Pets and rolls back on failure"
   const runtimeDirectory = await mkdtemp(path.join(os.tmpdir(), "openagentpet-pack-test-"));
   const selectedPack = await createPack(runtimeDirectory, "selected", "Selected");
   const malformedPack = await createPack(runtimeDirectory, "malformed", "Malformed");
-  await writeFile(path.join(malformedPack, "working.gif"), "not a GIF");
+  await writeFile(path.join(malformedPack, packAssets.Working), "not a GIF");
 
   const creations: Array<{ pet: Pet; pack: string }> = [];
   const refreshes: Array<{ pet: Pet; pack: string }> = [];
@@ -219,10 +219,10 @@ test("malformed Pet packs report the failed validation rule", async () => {
     });
 
     const wrongFormat = await createPack(parent, "wrong-format", "Wrong format");
-    await writeFile(path.join(wrongFormat, "idle.gif"), "not a GIF");
+    await writeFile(path.join(wrongFormat, packAssets.Idle), "not a GIF");
 
     const missingFile = await createPack(parent, "missing-file", "Missing file");
-    await rm(path.join(missingFile, "idle.gif"));
+    await rm(path.join(missingFile, packAssets.Idle));
 
     const opaque = await createPack(parent, "opaque", "Opaque");
     const opaqueGif = Buffer.from(transparentGif);
@@ -231,11 +231,11 @@ test("malformed Pet packs report the failed validation rule", async () => {
         opaqueGif[offset + 3] &= 0xfe;
       }
     }
-    await writeFile(path.join(opaque, "idle.gif"), opaqueGif);
+    await writeFile(path.join(opaque, packAssets.Idle), opaqueGif);
 
     const truncated = await createPack(parent, "truncated", "Truncated");
     await writeFile(
-      path.join(truncated, "idle.gif"),
+      path.join(truncated, packAssets.Idle),
       transparentGif.subarray(0, 40_000),
     );
 
