@@ -11,3 +11,7 @@ Use the default five triage labels. See `docs/agents/triage-labels.md`.
 ### Domain docs
 
 This is a single-context repository. See `docs/agents/domain.md`.
+
+### Commits
+
+Use Conventional Commits for every commit message.
