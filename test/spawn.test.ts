@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { createCompanion, type PetWindowOptions } from "../src/companion.js";
 import { runCli } from "../src/cli.js";
-import type { Pet } from "../src/protocol.js";
+import { MAX_PET_LABEL_LENGTH, PROTOCOL_VERSION, type Pet } from "../src/protocol.js";
 
 test("spawn creates one Idle Pet through the public command", async () => {
   const windowCreations: WindowCreation[] = [];
@@ -29,14 +29,14 @@ test("spawn creates one Idle Pet through the public command", async () => {
       0,
     );
     assert.deepEqual(companion.pets(), [
-      { sessionId: "opaque-session", activity: "Idle" },
+      { sessionId: "opaque-session", activity: "Idle", label: "openagentpet" },
     ]);
     assert.deepEqual(windowCreations, [
       {
-        pet: { sessionId: "opaque-session", activity: "Idle" },
+        pet: { sessionId: "opaque-session", activity: "Idle", label: "openagentpet" },
         options: {
           width: 320,
-          height: 320,
+          height: 344,
           transparent: true,
           frame: false,
           resizable: false,
@@ -55,10 +55,119 @@ test("spawn creates one Idle Pet through the public command", async () => {
     assert.equal(windowCreations.length, 1);
     assert.equal(companion.pets().length, 1);
     assert.deepEqual(windowRefreshes, [
-      { sessionId: "opaque-session", activity: "Idle" },
+      { sessionId: "opaque-session", activity: "Idle", label: "openagentpet" },
     ]);
   } finally {
     await cleanup();
+  }
+});
+
+test("Spawn sends only a bounded directory basename and keeps the first Pet label", async () => {
+  const windowCreations: WindowCreation[] = [];
+  const windowRefreshes: Pet[] = [];
+  const { companion, cleanup } = await testCompanion(
+    (pet, options) => windowCreations.push({ pet: { ...pet }, options }),
+    undefined,
+    (pet) => windowRefreshes.push({ ...pet }),
+  );
+
+  await companion.start();
+  try {
+    assert.equal(
+      await runCli(["spawn", "--session-id", "labelled-session"], {
+        socketPath: companion.socketPath,
+        currentWorkingDirectory: "/private/workspaces/openagentpet",
+      }),
+      0,
+    );
+    assert.deepEqual(companion.pets(), [
+      { sessionId: "labelled-session", activity: "Idle", label: "openagentpet" },
+    ]);
+    assert.deepEqual(windowCreations.map(({ pet }) => pet), companion.pets());
+    assert.equal(JSON.stringify(windowCreations).includes("/private/"), false);
+
+    assert.equal(
+      await runCli(["spawn", "--session-id", "labelled-session"], {
+        socketPath: companion.socketPath,
+        currentWorkingDirectory: "/private/renamed-project",
+      }),
+      0,
+    );
+    assert.deepEqual(windowRefreshes, [
+      { sessionId: "labelled-session", activity: "Idle", label: "openagentpet" },
+    ]);
+
+    for (const sessionId of ["same-label-one", "same-label-two"]) {
+      await runCli(["spawn", "--session-id", sessionId], {
+        socketPath: companion.socketPath,
+        currentWorkingDirectory: "/private/duplicate-name",
+      });
+    }
+    assert.deepEqual(
+      companion.pets().slice(1).map(({ sessionId, label }) => ({ sessionId, label })),
+      [
+        { sessionId: "same-label-one", label: "duplicate-name" },
+        { sessionId: "same-label-two", label: "duplicate-name" },
+      ],
+    );
+
+    await runCli(["spawn", "--session-id", "fallback-label"], {
+      socketPath: companion.socketPath,
+      currentWorkingDirectory: "/",
+    });
+    assert.equal(companion.pets().at(-1)?.label, "Local session");
+
+    const valid = {
+      version: PROTOCOL_VERSION,
+      command: "spawn",
+      sessionId: "validated-session",
+      activity: "Idle",
+      label: "project",
+    };
+    for (const message of [
+      { ...valid, label: undefined },
+      { ...valid, label: "" },
+      { ...valid, label: "x".repeat(MAX_PET_LABEL_LENGTH + 1) },
+      { ...valid, label: "/private/project" },
+      { ...valid, label: "project/name" },
+      { ...valid, label: "project", workingDirectory: "/private/project" },
+    ]) {
+      assert.equal(
+        JSON.parse(await sendRaw(companion.socketPath, JSON.stringify(message))).ok,
+        false,
+      );
+    }
+    const mismatch = JSON.parse(await sendRaw(companion.socketPath, JSON.stringify({
+      ...valid,
+      version: PROTOCOL_VERSION - 1,
+    }))) as { error?: string };
+    assert.match(mismatch.error ?? "", /quit and restart/i);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("Spawn tells the user to restart an incompatible running Companion", async () => {
+  const runtimeDirectory = await mkdtemp(path.join(os.tmpdir(), "openagentpet-old-companion-"));
+  const socketPath = path.join(runtimeDirectory, "control.sock");
+  const errors: string[] = [];
+  const server = net.createServer((socket) =>
+    socket.once("data", () => socket.end('{"ok":false}\n')),
+  );
+
+  await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+  try {
+    assert.equal(
+      await runCli(["spawn", "--session-id", "new-session"], {
+        socketPath,
+        writeError: (message) => errors.push(message),
+      }),
+      1,
+    );
+    assert.match(errors[0] ?? "", /quit and restart/i);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await rm(runtimeDirectory, { recursive: true });
   }
 });
 
@@ -77,7 +186,9 @@ test("spawn starts the Companion when it is not running", async () => {
       0,
     );
     assert.equal(windowCreations.length, 1);
-    assert.deepEqual(companion.pets(), [{ sessionId: "new-session", activity: "Idle" }]);
+    assert.deepEqual(companion.pets(), [
+      { sessionId: "new-session", activity: "Idle", label: "openagentpet" },
+    ]);
   } finally {
     await cleanup();
   }
@@ -106,7 +217,7 @@ test("prompt submission and turn completion update an existing Pet", async () =>
       0,
     );
     assert.deepEqual(companion.pets(), [
-      { sessionId: "active-session", activity: "Thinking" },
+      { sessionId: "active-session", activity: "Thinking", label: "openagentpet" },
     ]);
 
     assert.equal(
@@ -117,11 +228,11 @@ test("prompt submission and turn completion update an existing Pet", async () =>
       0,
     );
     assert.deepEqual(companion.pets(), [
-      { sessionId: "active-session", activity: "Idle" },
+      { sessionId: "active-session", activity: "Idle", label: "openagentpet" },
     ]);
     assert.deepEqual(windowRefreshes, [
-      { sessionId: "active-session", activity: "Thinking" },
-      { sessionId: "active-session", activity: "Idle" },
+      { sessionId: "active-session", activity: "Thinking", label: "openagentpet" },
+      { sessionId: "active-session", activity: "Idle", label: "openagentpet" },
     ]);
   } finally {
     await cleanup();
@@ -296,8 +407,8 @@ test("overlapping Activity states follow priority without crossing Session bindi
       tool_use_id: "permission-tool",
     });
     assert.deepEqual(companion.pets(), [
-      { sessionId: "priority-session", activity: "Thinking" },
-      { sessionId: "isolated-session", activity: "Thinking" },
+      { sessionId: "priority-session", activity: "Thinking", label: "openagentpet" },
+      { sessionId: "isolated-session", activity: "Thinking", label: "openagentpet" },
     ]);
   } finally {
     await cleanup();
@@ -387,8 +498,8 @@ test("sessions can spawn and despawn independently", async () => {
       );
     }
     assert.deepEqual(companion.pets(), [
-      { sessionId: "first-session", activity: "Idle" },
-      { sessionId: "second-session", activity: "Idle" },
+      { sessionId: "first-session", activity: "Idle", label: "openagentpet" },
+      { sessionId: "second-session", activity: "Idle", label: "openagentpet" },
     ]);
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -400,7 +511,7 @@ test("sessions can spawn and despawn independently", async () => {
       );
     }
     assert.deepEqual(companion.pets(), [
-      { sessionId: "second-session", activity: "Idle" },
+      { sessionId: "second-session", activity: "Idle", label: "openagentpet" },
     ]);
     assert.deepEqual(windowRemovals, ["first-session"]);
   } finally {

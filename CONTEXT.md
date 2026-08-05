@@ -83,7 +83,7 @@ One Pet created for exactly one Claude Code session. Several Pet instances may b
 _Avoid_: global pet, shared pet
 
 **Pet label**:
-The read-only name shown beneath a Pet, captured from the basename of the Claude Code session's working directory when the Pet is Spawned. It is display context only and does not identify or bind the session.
+The read-only name shown beneath a Pet, captured from the basename of the Claude Code session's working directory when the Pet is Spawned. The full project path stays outside the Companion protocol. It is display context only and does not identify or bind the session.
 _Avoid_: session name, workspace binding, project identifier
 
 **Session binding**:

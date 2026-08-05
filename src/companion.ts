@@ -8,14 +8,21 @@ import {
   selectPetPack,
   type PetPack,
 } from "./pet-pack.js";
-import { MAX_MESSAGE_BYTES, parseCommand, type Command, type Pet } from "./protocol.js";
+import {
+  hasProtocolVersionMismatch,
+  MAX_MESSAGE_BYTES,
+  parseCommand,
+  PROTOCOL_MISMATCH_ERROR,
+  type Command,
+  type Pet,
+} from "./protocol.js";
 
 const runtimeDirectory = path.join(os.tmpdir(), `openagentpet-${process.getuid?.() ?? "user"}`);
 export const defaultSocketPath = path.join(runtimeDirectory, "control.sock");
 
 const idleWindowOptions = {
   width: 320,
-  height: 320,
+  height: 344,
   transparent: true,
   frame: false,
   resizable: false,
@@ -52,9 +59,9 @@ export function createCompanion({
     let input = "";
     let handled = false;
 
-    const reject = () => {
+    const reject = (error?: string) => {
       handled = true;
-      socket.end('{"ok":false}\n');
+      socket.end(`${JSON.stringify({ ok: false, ...(error && { error }) })}\n`);
     };
 
     socket.setEncoding("utf8");
@@ -70,7 +77,11 @@ export function createCompanion({
 
       const command = parseCommand(input.slice(0, newline));
       if (!command || input.slice(newline + 1).trim()) {
-        reject();
+        reject(
+          hasProtocolVersionMismatch(input.slice(0, newline))
+            ? PROTOCOL_MISMATCH_ERROR
+            : undefined,
+        );
         return;
       }
       handled = true;
@@ -97,7 +108,11 @@ export function createCompanion({
         existingPet.activity = "Idle";
         refreshWindow(existingPet, activePack);
       } else {
-        const pet = { sessionId: command.sessionId, activity: command.activity } satisfies Pet;
+        const pet = {
+          sessionId: command.sessionId,
+          activity: command.activity,
+          label: command.label,
+        } satisfies Pet;
         registry.set(pet.sessionId, pet);
         createWindow(
           pet,

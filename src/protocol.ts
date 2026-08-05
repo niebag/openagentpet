@@ -1,5 +1,8 @@
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const MAX_MESSAGE_BYTES = 1024;
+export const MAX_PET_LABEL_LENGTH = 100;
+export const PROTOCOL_MISMATCH_ERROR =
+  "The running Companion is incompatible. Quit and restart OpenAgentPet.";
 
 export const ACTIVITIES = [
   "Idle",
@@ -15,6 +18,7 @@ export type ToolActivity = "Researching" | "Working";
 export type Pet = {
   sessionId: string;
   activity: Activity;
+  label: string;
 };
 
 export type SpawnCommand = Pet & {
@@ -43,12 +47,13 @@ export type PackUseCommand = {
 
 export type Command = SpawnCommand | RemoveCommand | ActivityCommand | PackUseCommand;
 
-export function spawnCommand(sessionId: string): SpawnCommand {
+export function spawnCommand(sessionId: string, label: string): SpawnCommand {
   return {
     version: PROTOCOL_VERSION,
     command: "spawn",
     sessionId,
     activity: "Idle",
+    label,
   };
 }
 
@@ -101,7 +106,8 @@ export function parseCommand(input: string): Command | undefined {
   if (
     command.command === "spawn" &&
     command.activity === "Idle" &&
-    keys.join(",") === "activity,command,sessionId,version"
+    isPetLabel(command.label) &&
+    keys.join(",") === "activity,command,label,sessionId,version"
   ) {
     return command as SpawnCommand;
   }
@@ -119,4 +125,30 @@ export function parseCommand(input: string): Command | undefined {
     return command as ActivityCommand;
   }
   return undefined;
+}
+
+export function isPetLabel(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= MAX_PET_LABEL_LENGTH &&
+    value.trim() === value &&
+    value !== "." &&
+    value !== ".." &&
+    !/[\\/\0-\x1F\x7F]/.test(value)
+  );
+}
+
+export function hasProtocolVersionMismatch(input: string) {
+  try {
+    const value: unknown = JSON.parse(input);
+    return (
+      !!value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      (value as Record<string, unknown>).version !== PROTOCOL_VERSION
+    );
+  } catch {
+    return false;
+  }
 }

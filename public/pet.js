@@ -2,6 +2,7 @@ const parameters = new URLSearchParams(location.search);
 const image = document.querySelector("img");
 image.src = parameters.get("asset") ?? "";
 image.alt = `${decodeURIComponent(location.hash.slice(1)).replace("-", " ")} OpenAgentPet`;
+document.querySelector("#label").textContent = parameters.get("label") ?? "";
 
 if (parameters.get("reducedMotion") === "true") {
   const freeze = () => {

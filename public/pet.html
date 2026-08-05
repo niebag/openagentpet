@@ -33,12 +33,34 @@
 
       body {
         -webkit-app-region: drag;
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) 24px;
+      }
+
+      .artwork {
+        min-height: 0;
+      }
+
+      #label {
+        align-self: center;
+        box-sizing: border-box;
+        color: white;
+        font: 13px system-ui;
+        overflow: hidden;
+        padding: 0 8px;
+        text-align: center;
+        text-overflow: ellipsis;
+        user-select: none;
+        white-space: nowrap;
       }
     </style>
   </head>
   <body>
-    <img alt="OpenAgentPet" />
-    <canvas hidden aria-label="Reduced-motion OpenAgentPet"></canvas>
+    <div class="artwork">
+      <img alt="OpenAgentPet" />
+      <canvas hidden aria-label="Reduced-motion OpenAgentPet"></canvas>
+    </div>
+    <div id="label"></div>
     <script src="pet.js"></script>
   </body>
 </html>

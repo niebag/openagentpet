@@ -89,7 +89,7 @@ Remove that session's Pet when you no longer need it:
 /openagentpet:despawn
 ```
 
-Spawn and Despawn are explicit and idempotent. Running Spawn twice refreshes the existing Pet for that session; running Despawn when no Pet exists is harmless. Ending a Claude Code session also removes its Pet.
+Spawn and Despawn are explicit and idempotent. Running Spawn twice refreshes the existing Pet for that session without changing its label; running Despawn when no Pet exists is harmless. Each Pet keeps a read-only label from the basename of its working directory at first Spawn. Ending a Claude Code session also removes its Pet.
 
 ## Activity states
 
@@ -144,19 +144,19 @@ OpenAgentPet has no analytics, telemetry, crash reporting, account, cloud servic
 
 The following data stays on your Mac:
 
-- prompts, transcripts, project and repository paths, tool arguments, and tool results;
+- prompts, transcripts, full project and repository paths, tool arguments, and tool results;
 - Pet pack manifests and GIFs;
 - the selected Pet pack path and hook state used to resolve concurrent Activity states;
 - each opaque Session identifier and all Companion state.
 
 The Claude Code plugin talks to the Companion through a Unix-domain socket restricted to the current macOS user. Requests sent to that socket contain only the protocol version and one of these fixed payloads:
 
-- Spawn: an opaque Session identifier and the Idle Activity state;
+- Spawn: an opaque Session identifier, the Idle Activity state, and a read-only Pet label derived from the working-directory basename. The full directory path never enters the Companion protocol;
 - Activity update: an opaque Session identifier and one of the five Activity states;
 - Despawn or session end: an opaque Session identifier;
 - Pet pack selection: the local path to the selected pack.
 
-The Companion replies with a success result, a failure result, or a failure result with a local error message. Responses do not include the Session identifier, Activity state, or Pet pack path.
+The Companion replies with a success result, a failure result, or a failure result with a local error message. Responses do not include the Session identifier, Activity state, Pet label, or Pet pack path.
 
 npm network access may occur when you run `npx openagentpet install`, including a rerun; when a confirmed install, repair, or update runs `npm install --global`; after a user-invoked Spawn or Despawn triggers the at-most-once-per-24-hours version check; or after you explicitly confirm an available update. Companion launch, Activity hooks, Pet pack selection, and background timers do not contact npm.
 
