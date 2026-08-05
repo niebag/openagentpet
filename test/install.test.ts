@@ -218,6 +218,11 @@ test("the installed plugin exposes Spawn, Despawn, and Activity hooks", async ()
 
   assert.match(spawn, /openagentpet spawn --session-id/);
   assert.match(despawn, /openagentpet despawn --session-id/);
+  for (const skill of [spawn, despawn]) {
+    assert.match(skill, /Ask whether they want to update/);
+    assert.match(skill, /Only after they\s+confirm/);
+    assert.match(skill, /exact npm command/);
+  }
   assert.deepEqual(Object.keys(hooks.hooks), [
     "UserPromptSubmit",
     "PreToolUse",

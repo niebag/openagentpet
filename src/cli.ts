@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import net from "node:net";
 import path from "node:path";
@@ -39,9 +40,13 @@ type RunOptions = {
   runProcess?: (command: string, args: string[]) => Promise<ProcessResult>;
   ask?: (prompt: string) => Promise<string>;
   packageVersion?: string;
+  updateCheckPath?: string | false;
+  now?: () => number;
 };
 
 type ProcessResult = { status: number; stdout: string; stderr: string };
+
+const updateLockStaleAfter = 10 * 60 * 1_000;
 
 export async function runCli(
   argv: string[],
@@ -59,6 +64,10 @@ export async function runCli(
     runProcess = execute,
     ask,
     packageVersion = readPackageVersion(),
+    updateCheckPath = socketPath === defaultSocketPath
+      ? path.join(path.dirname(defaultPetPackSelectionPath), "update-check.json")
+      : false,
+    now = Date.now,
   }: RunOptions = {},
 ) {
   const [command, flag, sessionId, ...extra] = argv;
@@ -262,12 +271,30 @@ export async function runCli(
         return 1;
       }
     }
-    if (message.command !== "spawn") return 0;
-    await startCompanion();
-    response = await sendWhenReady(socketPath, message);
+    if (message.command === "spawn") {
+      await startCompanion();
+      response = await sendWhenReady(socketPath, message);
+    } else {
+      response = '{"ok":true}';
+    }
   }
   const result = JSON.parse(response) as { ok?: boolean; error?: string };
-  if (result.ok === true) return 0;
+  if (result.ok === true) {
+    if ((command === "spawn" || command === "despawn") && updateCheckPath) {
+      await offerOptionalUpdate({
+        updateCheckPath,
+        now,
+        runProcess,
+        packageVersion,
+        nodeVersion,
+        ask,
+        input,
+        output,
+        writeError,
+      });
+    }
+    return 0;
+  }
   writeError(`OpenAgentPet: ${result.error ?? "Command failed"}`);
   return 1;
 }
@@ -365,6 +392,176 @@ function execute(command: string, args: string[]) {
 
 function readPackageVersion() {
   return (createRequire(import.meta.url)("../../package.json") as { version: string }).version;
+}
+
+async function offerOptionalUpdate({
+  updateCheckPath,
+  now,
+  runProcess,
+  packageVersion,
+  nodeVersion,
+  ask,
+  input,
+  output,
+  writeError,
+}: {
+  updateCheckPath: string;
+  now: () => number;
+  runProcess: (command: string, args: string[]) => Promise<ProcessResult>;
+  packageVersion: string;
+  nodeVersion: string;
+  ask?: (prompt: string) => Promise<string>;
+  input: Readable;
+  output: Writable;
+  writeError: (message: string) => void;
+}) {
+  let releaseLock: (() => Promise<void>) | undefined;
+  try {
+    releaseLock = await claimUpdateCheck(updateCheckPath);
+  } catch (error) {
+    writeError(`OpenAgentPet could not save the update check: ${(error as Error).message}`);
+    return;
+  }
+  if (!releaseLock) return;
+
+  try {
+    const checkedAt = await readFile(updateCheckPath, "utf8")
+      .then((contents) => {
+        const state = parseJson(contents);
+        return isRecord(state) && typeof state.checkedAt === "number"
+          ? state.checkedAt
+          : undefined;
+      })
+      .catch(() => undefined);
+    const checkedNow = now();
+    if (checkedAt !== undefined && checkedNow - checkedAt < 24 * 60 * 60 * 1_000) {
+      return;
+    }
+
+    try {
+      await writeFile(updateCheckPath, JSON.stringify({ checkedAt: checkedNow }), {
+        mode: 0o600,
+      });
+    } catch (error) {
+      writeError(`OpenAgentPet could not save the update check: ${(error as Error).message}`);
+      return;
+    }
+
+    const check = await runProcess("npm", ["outdated", "--global", "--json", "openagentpet"]);
+    const outdated = parseJson(check.stdout);
+    const release = isRecord(outdated) ? outdated.openagentpet : undefined;
+    if (!isRecord(outdated) || (check.status !== 0 && !isRecord(release))) {
+      writeError(
+        `OpenAgentPet could not check for updates: ${check.stderr.trim() || "npm failed"}`,
+      );
+      return;
+    }
+
+    if (!isRecord(release)) return;
+    const availableVersion = release.wanted;
+    if (
+      typeof availableVersion !== "string" ||
+      !isNewerVersion(availableVersion, packageVersion)
+    ) return;
+
+    const engineCheck = await runProcess("npm", [
+      "view",
+      `openagentpet@${availableVersion}`,
+      "engines.node",
+      "--json",
+    ]);
+    const engineRange = parseJson(engineCheck.stdout);
+    if (engineCheck.status !== 0) {
+      writeError(
+        `OpenAgentPet could not check update compatibility: ${engineCheck.stderr.trim() || "npm failed"}`,
+      );
+      return;
+    }
+    if (typeof engineRange === "string" && !supportsNode(engineRange, nodeVersion)) {
+      return;
+    }
+
+    output.write(
+      `OpenAgentPet update available: ${packageVersion} installed, ${availableVersion} available.\n`,
+    );
+    if (!ask && !(input as Readable & { isTTY?: boolean }).isTTY) {
+      output.write(
+        `After the user confirms, run: npm install --global openagentpet@${availableVersion}\n`,
+      );
+      return;
+    }
+    const prompt = ask ? undefined : createInterface({ input, output });
+    const question = ask ?? ((message: string) => prompt!.question(message));
+    try {
+      const confirmed = (await question("Update now? [y/N] ")).trim().toLowerCase();
+      if (confirmed !== "y" && confirmed !== "yes") {
+        output.write(`Update declined. OpenAgentPet ${packageVersion} is still installed.\n`);
+        return;
+      }
+    } finally {
+      prompt?.close();
+    }
+
+    const update = await runProcess("npm", [
+      "install",
+      "--global",
+      `openagentpet@${availableVersion}`,
+    ]);
+    if (update.status !== 0) {
+      writeError(
+        `OpenAgentPet could not update to ${availableVersion}: ${update.stderr.trim() || "npm failed"}`,
+      );
+      return;
+    }
+    output.write(`OpenAgentPet updated to ${availableVersion}.\n`);
+  } finally {
+    await releaseLock().catch((error: Error) =>
+      writeError(`OpenAgentPet could not finish the update check: ${error.message}`),
+    );
+  }
+}
+
+async function claimUpdateCheck(updateCheckPath: string) {
+  await mkdir(path.dirname(updateCheckPath), { recursive: true, mode: 0o700 });
+  const lockPath = `${updateCheckPath}.lock`;
+  try {
+    await mkdir(lockPath, { mode: 0o700 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const lockAge = Date.now() - (await stat(lockPath)).mtimeMs;
+    if (lockAge < updateLockStaleAfter) return undefined;
+    await rm(lockPath, { recursive: true, force: true });
+    try {
+      await mkdir(lockPath, { mode: 0o700 });
+    } catch (retryError) {
+      if ((retryError as NodeJS.ErrnoException).code === "EEXIST") return undefined;
+      throw retryError;
+    }
+  }
+  return () => rm(lockPath, { recursive: true, force: true });
+}
+
+function isNewerVersion(candidate: string, installed: string) {
+  const candidateParts = stableVersionParts(candidate);
+  const installedParts = stableVersionParts(installed);
+  if (!candidateParts || !installedParts) return false;
+  for (let index = 0; index < candidateParts.length; index += 1) {
+    if (candidateParts[index]! !== installedParts[index]!) {
+      return candidateParts[index]! > installedParts[index]!;
+    }
+  }
+  return false;
+}
+
+function stableVersionParts(version: string) {
+  if (!/^\d+\.\d+\.\d+$/.test(version)) return undefined;
+  return version.split(".").map(Number);
+}
+
+function supportsNode(range: string, nodeVersion: string) {
+  // ponytail: v1 releases use one >= floor; add semver if package ranges expand.
+  const minimum = /^>=\s*(\d+)\.(\d+)\.(\d+)$/.exec(range);
+  return !!minimum && versionAtLeast(nodeVersion, minimum.slice(1).map(Number));
 }
 
 function parseJson(value: string): unknown {
