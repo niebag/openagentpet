@@ -1,0 +1,8 @@
+{
+  "name": "openagentpet",
+  "description": "Show local Claude Code activity as a floating Pet",
+  "version": "0.0.0",
+  "author": {
+    "name": "niebag"
+  }
+}
