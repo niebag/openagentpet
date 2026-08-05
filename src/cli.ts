@@ -2,11 +2,13 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import net from "node:net";
+import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { activityForHook, resetHookState } from "./claude-code.js";
 import { defaultSocketPath } from "./companion.js";
-import { removeCommand, spawnCommand, type Command } from "./protocol.js";
+import { activityCommand, removeCommand, spawnCommand, type Command } from "./protocol.js";
 
 type RunOptions = {
   socketPath?: string;
@@ -23,8 +25,9 @@ export async function runCli(
   }: RunOptions = {},
 ) {
   const [command, flag, sessionId, ...extra] = argv;
+  const stateDirectory = path.dirname(socketPath);
   let message: Command;
-  if (command === "session-end" && argv.length === 1) {
+  if ((command === "hook" || command === "session-end") && argv.length === 1) {
     let event: unknown;
     try {
       event = JSON.parse(await readInput());
@@ -35,14 +38,21 @@ export async function runCli(
     const hook = event as Record<string, unknown>;
     const hookSessionId = hook.session_id;
     if (
-      hook.hook_event_name !== "SessionEnd" ||
       typeof hookSessionId !== "string" ||
       hookSessionId.length === 0 ||
       hookSessionId.length > 256
     ) {
       return 64;
     }
-    message = removeCommand("session-end", hookSessionId);
+    if (hook.hook_event_name === "SessionEnd") {
+      await resetHookState(stateDirectory, hookSessionId, "Idle");
+      message = removeCommand("session-end", hookSessionId);
+    } else {
+      if (command !== "hook") return 64;
+      const activity = await activityForHook(stateDirectory, hookSessionId, hook);
+      if (!activity) return 64;
+      message = activityCommand(hookSessionId, activity);
+    }
   } else {
     if (
       (command !== "spawn" && command !== "despawn") ||
@@ -52,6 +62,7 @@ export async function runCli(
     ) {
       return 64;
     }
+    await resetHookState(stateDirectory, sessionId, "Idle");
     message =
       command === "spawn" ? spawnCommand(sessionId) : removeCommand("despawn", sessionId);
   }

@@ -1,6 +1,72 @@
 {
-  "description": "Remove a session's Pet when its Claude Code session ends",
+  "description": "Keep each spawned Pet in sync with observable Claude Code activity",
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openagentpet",
+            "args": ["hook"]
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openagentpet",
+            "args": ["hook"]
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openagentpet",
+            "args": ["hook"]
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openagentpet",
+            "args": ["hook"]
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openagentpet",
+            "args": ["hook"]
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "openagentpet",
+            "args": ["hook"]
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [

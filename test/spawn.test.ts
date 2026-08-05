@@ -83,6 +83,261 @@ test("spawn starts the Companion when it is not running", async () => {
   }
 });
 
+test("prompt submission and turn completion update an existing Pet", async () => {
+  const windowRefreshes: Pet[] = [];
+  const { companion, cleanup } = await testCompanion(
+    () => undefined,
+    undefined,
+    (pet) => windowRefreshes.push({ ...pet }),
+  );
+
+  await companion.start();
+  try {
+    await runCli(["spawn", "--session-id", "active-session"], {
+      socketPath: companion.socketPath,
+    });
+
+    assert.equal(
+      await submitHook(companion.socketPath, {
+        session_id: "active-session",
+        hook_event_name: "UserPromptSubmit",
+        prompt: "private prompt",
+      }),
+      0,
+    );
+    assert.deepEqual(companion.pets(), [
+      { sessionId: "active-session", activity: "Thinking" },
+    ]);
+
+    assert.equal(
+      await submitHook(companion.socketPath, {
+        session_id: "active-session",
+        hook_event_name: "Stop",
+      }),
+      0,
+    );
+    assert.deepEqual(companion.pets(), [
+      { sessionId: "active-session", activity: "Idle" },
+    ]);
+    assert.deepEqual(windowRefreshes, [
+      { sessionId: "active-session", activity: "Thinking" },
+      { sessionId: "active-session", activity: "Idle" },
+    ]);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("tool lifecycle hooks select Researching or Working, then Thinking", async () => {
+  const { companion, cleanup } = await testCompanion(() => undefined);
+  const cases = [
+    ["WebSearch", "Researching"],
+    ["WebFetch", "Researching"],
+    ["Bash", "Working"],
+    ["mcp__github__search_repositories", "Working"],
+    ["FutureUnknownTool", "Working"],
+  ] as const;
+
+  await companion.start();
+  try {
+    await runCli(["spawn", "--session-id", "tool-session"], {
+      socketPath: companion.socketPath,
+    });
+
+    for (const [toolName, expectedActivity] of cases) {
+      assert.equal(
+        await submitHook(companion.socketPath, {
+          session_id: "tool-session",
+          hook_event_name: "PreToolUse",
+          tool_name: toolName,
+          tool_input: { private: "not forwarded" },
+          tool_use_id: `tool-${toolName}`,
+        }),
+        0,
+      );
+      assert.equal(companion.pets()[0]?.activity, expectedActivity);
+
+      assert.equal(
+        await submitHook(companion.socketPath, {
+          session_id: "tool-session",
+          hook_event_name: "PostToolUse",
+          tool_name: toolName,
+          tool_input: { private: "not forwarded" },
+          tool_response: { private: "not forwarded" },
+          tool_use_id: `tool-${toolName}`,
+        }),
+        0,
+      );
+      assert.equal(companion.pets()[0]?.activity, "Thinking");
+    }
+  } finally {
+    await cleanup();
+  }
+});
+
+test("only a tool permission request selects Needs input and failures return to Thinking", async () => {
+  const { companion, cleanup } = await testCompanion(() => undefined);
+
+  await companion.start();
+  try {
+    await runCli(["spawn", "--session-id", "permission-session"], {
+      socketPath: companion.socketPath,
+    });
+    await submitHook(companion.socketPath, {
+      session_id: "permission-session",
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_use_id: "permission-tool",
+      tool_input: { private: "not forwarded" },
+    });
+
+    assert.equal(
+      await submitHook(companion.socketPath, {
+        session_id: "permission-session",
+        hook_event_name: "PermissionRequest",
+        tool_name: "Bash",
+        tool_input: { private: "not forwarded" },
+      }),
+      0,
+    );
+    assert.equal(companion.pets()[0]?.activity, "Needs input");
+
+    assert.equal(
+      await submitHook(companion.socketPath, {
+        session_id: "permission-session",
+        hook_event_name: "Notification",
+        notification_type: "idle_prompt",
+      }),
+      64,
+    );
+    assert.equal(companion.pets()[0]?.activity, "Needs input");
+
+    assert.equal(
+      await submitHook(companion.socketPath, {
+        session_id: "permission-session",
+        hook_event_name: "PostToolUseFailure",
+        tool_name: "Bash",
+        tool_use_id: "permission-tool",
+        error: "private failure",
+      }),
+      0,
+    );
+    assert.equal(companion.pets()[0]?.activity, "Thinking");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("overlapping Activity states follow priority without crossing Session bindings", async () => {
+  const { companion, cleanup } = await testCompanion(() => undefined);
+
+  await companion.start();
+  try {
+    for (const sessionId of ["priority-session", "isolated-session"]) {
+      await runCli(["spawn", "--session-id", sessionId], {
+        socketPath: companion.socketPath,
+      });
+    }
+    await submitHook(companion.socketPath, {
+      session_id: "isolated-session",
+      hook_event_name: "UserPromptSubmit",
+    });
+
+    await submitHook(companion.socketPath, {
+      session_id: "priority-session",
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_use_id: "permission-tool",
+    });
+    assert.equal(companion.pets()[0]?.activity, "Working");
+
+    await submitHook(companion.socketPath, {
+      session_id: "priority-session",
+      hook_event_name: "PreToolUse",
+      tool_name: "WebSearch",
+      tool_use_id: "research-tool",
+    });
+    assert.equal(companion.pets()[0]?.activity, "Researching");
+
+    await submitHook(companion.socketPath, {
+      session_id: "priority-session",
+      hook_event_name: "PermissionRequest",
+      tool_name: "Bash",
+    });
+    assert.equal(companion.pets()[0]?.activity, "Needs input");
+
+    await submitHook(companion.socketPath, {
+      session_id: "priority-session",
+      hook_event_name: "PreToolUse",
+      tool_name: "mcp__github__search_repositories",
+      tool_use_id: "other-working-tool",
+    });
+
+    await submitHook(companion.socketPath, {
+      session_id: "priority-session",
+      hook_event_name: "PostToolUse",
+      tool_name: "WebSearch",
+      tool_use_id: "research-tool",
+    });
+    assert.equal(companion.pets()[0]?.activity, "Needs input");
+
+    await submitHook(companion.socketPath, {
+      session_id: "priority-session",
+      hook_event_name: "PostToolUse",
+      tool_name: "mcp__github__search_repositories",
+      tool_use_id: "other-working-tool",
+    });
+    assert.equal(companion.pets()[0]?.activity, "Needs input");
+
+    await submitHook(companion.socketPath, {
+      session_id: "priority-session",
+      hook_event_name: "PostToolUse",
+      tool_name: "Bash",
+      tool_use_id: "permission-tool",
+    });
+    assert.deepEqual(companion.pets(), [
+      { sessionId: "priority-session", activity: "Thinking" },
+      { sessionId: "isolated-session", activity: "Thinking" },
+    ]);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("Activity state hooks neither create a Pet nor relaunch the Companion", async () => {
+  const windowCreations: Pet[] = [];
+  const { companion, cleanup } = await testCompanion((pet) =>
+    windowCreations.push({ ...pet }),
+  );
+  let companionStarts = 0;
+  const event = {
+    session_id: "absent-session",
+    hook_event_name: "UserPromptSubmit",
+  };
+
+  await companion.start();
+  try {
+    assert.equal(await submitHook(companion.socketPath, event), 0);
+    assert.deepEqual(companion.pets(), []);
+    assert.deepEqual(windowCreations, []);
+
+    await companion.quit();
+    assert.equal(
+      await runCli(["hook"], {
+        socketPath: companion.socketPath,
+        readInput: async () => JSON.stringify(event),
+        startCompanion: async () => {
+          companionStarts += 1;
+        },
+      }),
+      0,
+    );
+    assert.equal(companionStarts, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
 test("a closed Pet can be spawned again", async () => {
   let windowCreations = 0;
   let closeWindow: () => void = () => undefined;
@@ -243,6 +498,21 @@ test("invalid socket messages cannot create or change a Pet instance", async () 
       JSON.stringify({ ...valid, version: 2 }),
       JSON.stringify({ ...valid, prompt: "private" }),
       JSON.stringify({ ...valid, padding: "x".repeat(4096) }),
+      JSON.stringify({
+        version: 1,
+        command: "activity",
+        sessionId: "opaque-session",
+        activity: "Working",
+        update: "set",
+      }),
+      JSON.stringify({
+        version: 1,
+        command: "activity",
+        sessionId: "opaque-session",
+        activity: "Working",
+        update: "start",
+        toolName: "private",
+      }),
     ];
 
     for (const message of invalidMessages) {
@@ -294,5 +564,12 @@ function sendRaw(socketPath: string, message: string) {
     socket.on("data", (chunk) => (response += chunk));
     socket.on("end", () => resolve(response));
     socket.on("error", reject);
+  });
+}
+
+function submitHook(socketPath: string, event: Record<string, unknown>) {
+  return runCli(["hook"], {
+    socketPath,
+    readInput: async () => JSON.stringify(event),
   });
 }

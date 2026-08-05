@@ -68,7 +68,7 @@ export function createCompanion({
       if (command.command === "spawn") {
         const existingPet = registry.get(command.sessionId);
         if (existingPet) {
-          existingPet.activity = command.activity;
+          existingPet.activity = "Idle";
           refreshWindow(existingPet);
         } else {
           const pet = { sessionId: command.sessionId, activity: command.activity } satisfies Pet;
@@ -76,6 +76,12 @@ export function createCompanion({
           createWindow(pet, idleWindowOptions, () => {
             if (registry.get(pet.sessionId) === pet) registry.delete(pet.sessionId);
           });
+        }
+      } else if (command.command === "activity") {
+        const pet = registry.get(command.sessionId);
+        if (pet && pet.activity !== command.activity) {
+          pet.activity = command.activity;
+          refreshWindow(pet);
         }
       } else {
         if (registry.delete(command.sessionId)) removeWindow(command.sessionId);
