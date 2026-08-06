@@ -3,7 +3,7 @@
   "owner": {
     "name": "niebag"
   },
-  "description": "Claude Code integration for the OpenAgentPet macOS Companion app",
+  "description": "Claude Code integration for the OpenAgentPet Companion app",
   "plugins": [
     {
       "name": "openagentpet",

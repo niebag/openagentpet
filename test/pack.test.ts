@@ -6,6 +6,7 @@ import { Readable, Writable } from "node:stream";
 import test from "node:test";
 
 import { runCli } from "../src/cli.js";
+import { controlEndpointIn } from "../src/platform.js";
 import { createCompanion } from "../src/companion.js";
 import { defaultPetPackDirectory, loadPetPack } from "../src/pet-pack.js";
 import type { Pet } from "../src/protocol.js";
@@ -59,7 +60,7 @@ test("path selection updates existing and future Pets and rolls back on failure"
   const refreshes: Array<{ pet: Pet; pack: string }> = [];
   const errors: string[] = [];
   const companion = createCompanion({
-    socketPath: path.join(runtimeDirectory, "control.sock"),
+    socketPath: controlEndpointIn(runtimeDirectory),
     selectionPath: path.join(runtimeDirectory, "selection.json"),
     createWindow: (pet, _options, _onClosed, pack) =>
       creations.push({ pet: { ...pet }, pack: pack.name }),
@@ -73,6 +74,7 @@ test("path selection updates existing and future Pets and rolls back on failure"
     assert.equal(
       await runCli(["spawn", "--session-id", "existing"], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
       }),
       0,
     );
@@ -81,6 +83,7 @@ test("path selection updates existing and future Pets and rolls back on failure"
     assert.equal(
       await runCli(["pack", "use", selectedPack], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
         writeError: (message) => errors.push(message),
       }),
       0,
@@ -94,12 +97,14 @@ test("path selection updates existing and future Pets and rolls back on failure"
 
     await runCli(["spawn", "--session-id", "future"], {
       socketPath: companion.socketPath,
+      stateDirectory: companion.stateDirectory,
     });
     assert.equal(creations.at(-1)?.pack, "Selected");
 
     assert.equal(
       await runCli(["pack", "use", malformedPack], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
         writeError: (message) => errors.push(message),
       }),
       1,
@@ -111,6 +116,7 @@ test("path selection updates existing and future Pets and rolls back on failure"
     await companion.start();
     await runCli(["spawn", "--session-id", "after-restart"], {
       socketPath: companion.socketPath,
+      stateDirectory: companion.stateDirectory,
     });
     assert.equal(creations.at(-1)?.pack, "Selected");
   } finally {
@@ -122,7 +128,7 @@ test("path selection updates existing and future Pets and rolls back on failure"
 test("path selection while stopped does not relaunch the Companion", async () => {
   const runtimeDirectory = await mkdtemp(path.join(os.tmpdir(), "openagentpet-pack-offline-"));
   const selectedPack = await createPack(runtimeDirectory, "selected", "Offline selection");
-  const socketPath = path.join(runtimeDirectory, "control.sock");
+  const socketPath = controlEndpointIn(runtimeDirectory);
   const selectionPath = path.join(runtimeDirectory, "selection.json");
   let starts = 0;
 
@@ -150,7 +156,10 @@ test("path selection while stopped does not relaunch the Companion", async () =>
     });
     await companion.start();
     try {
-      await runCli(["spawn", "--session-id", "future"], { socketPath });
+      await runCli(["spawn", "--session-id", "future"], {
+        socketPath,
+        stateDirectory: runtimeDirectory,
+      });
       assert.deepEqual(createdWith, ["Offline selection"]);
     } finally {
       await companion.quit();
@@ -170,7 +179,7 @@ test("interactive selection lists the default and valid user Pet packs", async (
 
   const createdWith: string[] = [];
   const companion = createCompanion({
-    socketPath: path.join(runtimeDirectory, "control.sock"),
+    socketPath: controlEndpointIn(runtimeDirectory),
     selectionPath: path.join(runtimeDirectory, "selection.json"),
     createWindow: (_pet, _options, _onClosed, pack) => createdWith.push(pack.name),
     refreshWindow: () => undefined,
@@ -183,6 +192,7 @@ test("interactive selection lists the default and valid user Pet packs", async (
     assert.equal(
       await runCli(["pack", "use"], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
         userPackDirectory: userDirectory,
         input: Readable.from(["2\n"]),
         output: new Writable({
@@ -199,6 +209,7 @@ test("interactive selection lists the default and valid user Pet packs", async (
     assert.doesNotMatch(list, /Invalid custom pack/);
     await runCli(["spawn", "--session-id", "interactive"], {
       socketPath: companion.socketPath,
+      stateDirectory: companion.stateDirectory,
     });
     assert.deepEqual(createdWith, ["Valid custom pack"]);
   } finally {
@@ -247,7 +258,7 @@ test("malformed Pet packs report the failed validation rule", async () => {
 
     const errors: string[] = [];
     const companion = createCompanion({
-      socketPath: path.join(parent, "control.sock"),
+      socketPath: controlEndpointIn(parent),
       selectionPath: path.join(parent, "selection.json"),
       createWindow: () => undefined,
       refreshWindow: () => undefined,
@@ -266,6 +277,7 @@ test("malformed Pet packs report the failed validation rule", async () => {
       ] as const) {
         const exitCode = await runCli(["pack", "use", directory], {
             socketPath: companion.socketPath,
+            stateDirectory: companion.stateDirectory,
             writeError: (message) => errors.push(message),
           });
         assert.equal(exitCode, 1, directory);

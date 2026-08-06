@@ -1,6 +1,5 @@
 import { chmod, lstat, mkdir, unlink } from "node:fs/promises";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 
 import {
@@ -8,6 +7,11 @@ import {
   selectPetPack,
   type PetPack,
 } from "./pet-pack.js";
+import {
+  controlEndpointIn,
+  isNamedPipe,
+  runtimeDirectory as defaultRuntimeDirectory,
+} from "./platform.js";
 import {
   hasProtocolVersionMismatch,
   MAX_MESSAGE_BYTES,
@@ -17,8 +21,7 @@ import {
   type Pet,
 } from "./protocol.js";
 
-const runtimeDirectory = path.join(os.tmpdir(), `openagentpet-${process.getuid?.() ?? "user"}`);
-export const defaultSocketPath = path.join(runtimeDirectory, "control.sock");
+export const defaultSocketPath = controlEndpointIn(defaultRuntimeDirectory);
 
 const idleWindowOptions = {
   width: 320,
@@ -32,6 +35,7 @@ const idleWindowOptions = {
   resizable: true,
   hasShadow: false,
   alwaysOnTop: true,
+  skipTaskbar: true,
   show: false,
 } as const;
 
@@ -46,7 +50,10 @@ type CompanionOptions = {
   ) => void;
   refreshWindow: (pet: Pet, pack: PetPack) => void;
   removeWindow: (sessionId: string) => void;
+  /** A Unix domain socket path on macOS, a named pipe on Windows. */
   socketPath?: string;
+  /** Where local state lives; also holds the socket on macOS. */
+  stateDirectory?: string;
   selectionPath?: string;
 };
 
@@ -55,7 +62,8 @@ export function createCompanion({
   refreshWindow,
   removeWindow,
   socketPath = defaultSocketPath,
-  selectionPath = path.join(path.dirname(socketPath), "selected-pack.json"),
+  stateDirectory = defaultRuntimeDirectory,
+  selectionPath = path.join(stateDirectory, "selected-pack.json"),
 }: CompanionOptions) {
   const registry = new Map<string, Pet>();
   let activePack: PetPack;
@@ -140,17 +148,22 @@ export function createCompanion({
 
   return {
     socketPath,
+    stateDirectory,
     pets: () => [...registry.values()],
     async start() {
       activePack = await loadSelectedPetPack(selectionPath);
-      await mkdir(path.dirname(socketPath), { recursive: true, mode: 0o700 });
-      await chmod(path.dirname(socketPath), 0o700);
-      try {
-        const staleSocket = await lstat(socketPath);
-        if (!staleSocket.isSocket()) throw new Error(`${socketPath} is not a socket`);
-        await unlink(socketPath);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
+      // Named pipes have no filesystem entry to secure or to clean up after a
+      // crash: Windows drops the name with the process that owned it.
+      if (!isNamedPipe(socketPath)) {
+        await chmod(stateDirectory, 0o700);
+        try {
+          const staleSocket = await lstat(socketPath);
+          if (!staleSocket.isSocket()) throw new Error(`${socketPath} is not a socket`);
+          await unlink(socketPath);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
       }
       await new Promise<void>((resolve, reject) => {
         const onError = (error: Error) => reject(error);
@@ -160,7 +173,7 @@ export function createCompanion({
           resolve();
         });
       });
-      await chmod(socketPath, 0o600);
+      if (!isNamedPipe(socketPath)) await chmod(socketPath, 0o600);
     },
     async quit() {
       if (server.listening) {
@@ -168,9 +181,11 @@ export function createCompanion({
           server.close((error) => (error ? reject(error) : resolve())),
         );
       }
-      await unlink(socketPath).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "ENOENT") throw error;
-      });
+      if (!isNamedPipe(socketPath)) {
+        await unlink(socketPath).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") throw error;
+        });
+      }
       for (const sessionId of registry.keys()) removeWindow(sessionId);
       registry.clear();
     },

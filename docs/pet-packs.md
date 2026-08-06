@@ -3,7 +3,8 @@
 OpenAgentPet looks for custom Pet packs in:
 
 ```text
-~/Library/Application Support/OpenAgentPet/Pet Packs/
+macOS:   ~/Library/Application Support/OpenAgentPet/Pet Packs/
+Windows: %APPDATA%\OpenAgentPet\Pet Packs\
 ```
 
 Create one subdirectory per pack. Each pack needs a `manifest.json` and five

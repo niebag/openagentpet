@@ -14,7 +14,8 @@ const releaseVersion = packageJson.version as string;
 test("the public npm package has release metadata and a narrow file allowlist", async () => {
   assert.match(releaseVersion, /^\d+\.\d+\.\d+$/);
   assert.equal(packageJson.license, "MIT");
-  assert.deepEqual(packageJson.os, ["darwin"]);
+  // No os allowlist: the Companion runs on macOS and Windows.
+  assert.equal(packageJson.os, undefined);
   assert.deepEqual(packageJson.files, ["dist/src", "public", "LICENSE"]);
   assert.deepEqual(packageJson.repository, {
     type: "git",

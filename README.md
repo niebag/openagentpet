@@ -23,12 +23,16 @@
     <img src="https://shieldcn.dev/badge/macOS-13%2B.svg?variant=secondary&amp;size=sm&amp;logo=apple&amp;mode=light" alt="Supported platform: macOS 13 or newer" />
   </picture>
   <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Windows-10%2B.svg?variant=secondary&amp;size=sm&amp;logo=windows&amp;mode=dark" />
+    <img src="https://shieldcn.dev/badge/Windows-10%2B.svg?variant=secondary&amp;size=sm&amp;logo=windows&amp;mode=light" alt="Supported platform: Windows 10 or newer" />
+  </picture>
+  <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Claude_Code-supported.svg?variant=secondary&amp;size=sm&amp;logo=anthropic&amp;mode=dark" />
     <img src="https://shieldcn.dev/badge/Claude_Code-supported.svg?variant=secondary&amp;size=sm&amp;logo=anthropic&amp;mode=light" alt="Supported Agent integration: Claude Code" />
   </picture>
 </p>
 
-OpenAgentPet turns observable activity from each local Claude Code session into a small animated Pet that floats above your macOS windows. Pets are movable and resizable by default, and OpenAgentPet sends no prompt or transcript data off your Mac.
+OpenAgentPet turns observable activity from each local Claude Code session into a small animated Pet that floats above your desktop windows. Pets are movable and resizable by default, and OpenAgentPet sends no prompt or transcript data off your machine.
 
 > [!NOTE]
 > OpenAgentPet 1.2.0 is available from npm. The quick-start command installs the published release.
@@ -75,15 +79,15 @@ OpenAgentPet turns observable activity from each local Claude Code session into 
   </tr>
 </table>
 
-These previews show the bundled default Pet pack. The real Pet has a transparent, always-on-top window that floats above ordinary macOS windows; it is not embedded in Claude Code. Each spawned local session gets its own Pet.
+These previews show the bundled default Pet pack. The real Pet has a transparent, always-on-top window that floats above ordinary desktop windows; it is not embedded in Claude Code. Each spawned local session gets its own Pet.
 
 ## Requirements
 
-- macOS 13 or newer
+- macOS 13 or newer, or Windows 10 version 1809 or newer
 - Node.js 22.12 or newer, with npm
 - Claude Code installed locally
 
-Windows, Linux, Claude Desktop, Claude on the web, and remote Claude Code sessions are not supported.
+Linux, Claude Desktop, Claude on the web, and remote Claude Code sessions are not supported.
 
 ## Quick start
 
@@ -137,7 +141,8 @@ A Pet pack is one local `manifest.json` file plus exactly five different, decoda
 Put custom packs in:
 
 ```text
-~/Library/Application Support/OpenAgentPet/Pet Packs/
+macOS:   ~/Library/Application Support/OpenAgentPet/Pet Packs/
+Windows: %APPDATA%\OpenAgentPet\Pet Packs\
 ```
 
 Choose the built-in default or an available custom pack interactively:
@@ -158,14 +163,16 @@ A valid selection updates current Pets and future Pets. An invalid pack leaves t
 
 OpenAgentPet has no analytics, telemetry, crash reporting, account, cloud service, or remote-control endpoint.
 
-The following data stays on your Mac:
+The following data stays on your machine:
 
 - prompts, transcripts, full project and repository paths, tool arguments, and tool results;
 - Pet pack manifests and GIFs;
 - the selected Pet pack path and hook state used to resolve concurrent Activity states;
 - each opaque Session identifier and all Companion state.
 
-The Claude Code plugin talks to the Companion through a Unix-domain socket restricted to the current macOS user. Requests sent to that socket contain only the protocol version and one of these fixed payloads:
+The Claude Code plugin talks to the Companion through a local control channel that never leaves the machine. On macOS this is a Unix-domain socket created with `0600` permissions inside a `0700` directory, so only the current user can reach it. On Windows it is a named pipe whose name is derived from the per-user runtime directory; named pipes live in a machine-wide namespace and Node cannot set an access-control list on them, so on a multi-user Windows machine another signed-in user could in principle connect to it. The payloads below are all it accepts.
+
+Requests sent to that channel contain only the protocol version and one of these fixed payloads:
 
 - Spawn: an opaque Session identifier, the Idle Activity state, and a read-only Pet label derived from the working-directory basename. The full directory path never enters the Companion protocol;
 - Activity update: an opaque Session identifier and one of the five Activity states;
@@ -196,7 +203,7 @@ claude plugin marketplace remove openagentpet --scope user
 npm uninstall --global openagentpet
 ```
 
-These commands do not delete custom Pet packs or selection data under `~/Library/Application Support/OpenAgentPet/`.
+These commands do not delete custom Pet packs or selection data under `~/Library/Application Support/OpenAgentPet/` (macOS) or `%APPDATA%\OpenAgentPet\` (Windows).
 
 ## Agent support
 
@@ -208,13 +215,13 @@ Project-owned source is released under the [MIT License](LICENSE). The bundled C
 
 ## Release validation
 
-Maintainers can validate the npm artifact, Claude Code marketplace, command behavior, and native macOS windows with:
+Maintainers can validate the npm artifact, Claude Code marketplace, command behavior, and native windows with:
 
 ```sh
 npm run test:release
 ```
 
-The release check packs and installs the tarball in a temporary prefix, runs the macOS smoke test against that installed package, installs the plugin at user scope in an isolated Claude Code configuration, executes the unit tests, and validates the marketplace metadata.
+The release check packs and installs the tarball in a temporary prefix, runs the Electron smoke test against that installed package, installs the plugin at user scope in an isolated Claude Code configuration, executes the unit tests, and validates the marketplace metadata. It covers the host platform only, so a release needs one run on macOS and one on Windows.
 
 ## Downloads
 

@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { createCompanion, type PetWindowOptions } from "../src/companion.js";
 import { runCli } from "../src/cli.js";
+import { controlEndpointIn, isNamedPipe } from "../src/platform.js";
 import { MAX_PET_LABEL_LENGTH, PROTOCOL_VERSION, type Pet } from "../src/protocol.js";
 
 test("spawn creates one Idle Pet through the public command", async () => {
@@ -20,11 +21,15 @@ test("spawn creates one Idle Pet through the public command", async () => {
 
   await companion.start();
   try {
-    assert.equal((await stat(companion.socketPath)).mode & 0o777, 0o600);
-    assert.equal((await stat(path.dirname(companion.socketPath))).mode & 0o777, 0o700);
+    if (!isNamedPipe(companion.socketPath)) {
+      // Windows named pipes have no filesystem mode to assert on.
+      assert.equal((await stat(companion.socketPath)).mode & 0o777, 0o600);
+      assert.equal((await stat(companion.stateDirectory)).mode & 0o777, 0o700);
+    }
     assert.equal(
       await runCli(["spawn", "--session-id", "opaque-session"], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
       }),
       0,
     );
@@ -46,6 +51,7 @@ test("spawn creates one Idle Pet through the public command", async () => {
           resizable: true,
           hasShadow: false,
           alwaysOnTop: true,
+          skipTaskbar: true,
           show: false,
         },
       },
@@ -53,6 +59,7 @@ test("spawn creates one Idle Pet through the public command", async () => {
     assert.equal(
       await runCli(["spawn", "--session-id", "opaque-session"], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
       }),
       0,
     );
@@ -80,6 +87,7 @@ test("Spawn sends only a bounded directory basename and keeps the first Pet labe
     assert.equal(
       await runCli(["spawn", "--session-id", "labelled-session"], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
         currentWorkingDirectory: "/private/workspaces/openagentpet",
       }),
       0,
@@ -93,6 +101,7 @@ test("Spawn sends only a bounded directory basename and keeps the first Pet labe
     assert.equal(
       await runCli(["spawn", "--session-id", "labelled-session"], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
         currentWorkingDirectory: "/private/renamed-project",
       }),
       0,
@@ -104,6 +113,7 @@ test("Spawn sends only a bounded directory basename and keeps the first Pet labe
     for (const sessionId of ["same-label-one", "same-label-two"]) {
       await runCli(["spawn", "--session-id", sessionId], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
         currentWorkingDirectory: "/private/duplicate-name",
       });
     }
@@ -117,6 +127,7 @@ test("Spawn sends only a bounded directory basename and keeps the first Pet labe
 
     await runCli(["spawn", "--session-id", "fallback-label"], {
       socketPath: companion.socketPath,
+      stateDirectory: companion.stateDirectory,
       currentWorkingDirectory: "/",
     });
     assert.equal(companion.pets().at(-1)?.label, "Local session");
@@ -153,7 +164,7 @@ test("Spawn sends only a bounded directory basename and keeps the first Pet labe
 
 test("Spawn tells the user to restart an incompatible running Companion", async () => {
   const runtimeDirectory = await mkdtemp(path.join(os.tmpdir(), "openagentpet-old-companion-"));
-  const socketPath = path.join(runtimeDirectory, "control.sock");
+  const socketPath = controlEndpointIn(runtimeDirectory);
   const errors: string[] = [];
   const server = net.createServer((socket) =>
     socket.once("data", () => socket.end('{"ok":false}\n')),
@@ -164,6 +175,7 @@ test("Spawn tells the user to restart an incompatible running Companion", async 
     assert.equal(
       await runCli(["spawn", "--session-id", "new-session"], {
         socketPath,
+        stateDirectory: runtimeDirectory,
         writeError: (message) => errors.push(message),
       }),
       1,
@@ -185,6 +197,7 @@ test("spawn starts the Companion when it is not running", async () => {
     assert.equal(
       await runCli(["spawn", "--session-id", "new-session"], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
         startCompanion: () => companion.start(),
       }),
       0,
@@ -210,10 +223,11 @@ test("prompt submission and turn completion update an existing Pet", async () =>
   try {
     await runCli(["spawn", "--session-id", "active-session"], {
       socketPath: companion.socketPath,
+      stateDirectory: companion.stateDirectory,
     });
 
     assert.equal(
-      await submitHook(companion.socketPath, {
+      await submitHook(companion, {
         session_id: "active-session",
         hook_event_name: "UserPromptSubmit",
         prompt: "private prompt",
@@ -225,7 +239,7 @@ test("prompt submission and turn completion update an existing Pet", async () =>
     ]);
 
     assert.equal(
-      await submitHook(companion.socketPath, {
+      await submitHook(companion, {
         session_id: "active-session",
         hook_event_name: "Stop",
       }),
@@ -257,11 +271,12 @@ test("tool lifecycle hooks select Researching or Working, then Thinking", async 
   try {
     await runCli(["spawn", "--session-id", "tool-session"], {
       socketPath: companion.socketPath,
+      stateDirectory: companion.stateDirectory,
     });
 
     for (const [toolName, expectedActivity] of cases) {
       assert.equal(
-        await submitHook(companion.socketPath, {
+        await submitHook(companion, {
           session_id: "tool-session",
           hook_event_name: "PreToolUse",
           tool_name: toolName,
@@ -273,7 +288,7 @@ test("tool lifecycle hooks select Researching or Working, then Thinking", async 
       assert.equal(companion.pets()[0]?.activity, expectedActivity);
 
       assert.equal(
-        await submitHook(companion.socketPath, {
+        await submitHook(companion, {
           session_id: "tool-session",
           hook_event_name: "PostToolUse",
           tool_name: toolName,
@@ -297,8 +312,9 @@ test("only a tool permission request selects Needs input and failures return to 
   try {
     await runCli(["spawn", "--session-id", "permission-session"], {
       socketPath: companion.socketPath,
+      stateDirectory: companion.stateDirectory,
     });
-    await submitHook(companion.socketPath, {
+    await submitHook(companion, {
       session_id: "permission-session",
       hook_event_name: "PreToolUse",
       tool_name: "Bash",
@@ -307,7 +323,7 @@ test("only a tool permission request selects Needs input and failures return to 
     });
 
     assert.equal(
-      await submitHook(companion.socketPath, {
+      await submitHook(companion, {
         session_id: "permission-session",
         hook_event_name: "PermissionRequest",
         tool_name: "Bash",
@@ -318,7 +334,7 @@ test("only a tool permission request selects Needs input and failures return to 
     assert.equal(companion.pets()[0]?.activity, "Needs input");
 
     assert.equal(
-      await submitHook(companion.socketPath, {
+      await submitHook(companion, {
         session_id: "permission-session",
         hook_event_name: "Notification",
         notification_type: "idle_prompt",
@@ -328,7 +344,7 @@ test("only a tool permission request selects Needs input and failures return to 
     assert.equal(companion.pets()[0]?.activity, "Needs input");
 
     assert.equal(
-      await submitHook(companion.socketPath, {
+      await submitHook(companion, {
         session_id: "permission-session",
         hook_event_name: "PostToolUseFailure",
         tool_name: "Bash",
@@ -351,14 +367,15 @@ test("overlapping Activity states follow priority without crossing Session bindi
     for (const sessionId of ["priority-session", "isolated-session"]) {
       await runCli(["spawn", "--session-id", sessionId], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
       });
     }
-    await submitHook(companion.socketPath, {
+    await submitHook(companion, {
       session_id: "isolated-session",
       hook_event_name: "UserPromptSubmit",
     });
 
-    await submitHook(companion.socketPath, {
+    await submitHook(companion, {
       session_id: "priority-session",
       hook_event_name: "PreToolUse",
       tool_name: "Bash",
@@ -366,7 +383,7 @@ test("overlapping Activity states follow priority without crossing Session bindi
     });
     assert.equal(companion.pets()[0]?.activity, "Working");
 
-    await submitHook(companion.socketPath, {
+    await submitHook(companion, {
       session_id: "priority-session",
       hook_event_name: "PreToolUse",
       tool_name: "WebSearch",
@@ -374,21 +391,21 @@ test("overlapping Activity states follow priority without crossing Session bindi
     });
     assert.equal(companion.pets()[0]?.activity, "Researching");
 
-    await submitHook(companion.socketPath, {
+    await submitHook(companion, {
       session_id: "priority-session",
       hook_event_name: "PermissionRequest",
       tool_name: "Bash",
     });
     assert.equal(companion.pets()[0]?.activity, "Needs input");
 
-    await submitHook(companion.socketPath, {
+    await submitHook(companion, {
       session_id: "priority-session",
       hook_event_name: "PreToolUse",
       tool_name: "mcp__github__search_repositories",
       tool_use_id: "other-working-tool",
     });
 
-    await submitHook(companion.socketPath, {
+    await submitHook(companion, {
       session_id: "priority-session",
       hook_event_name: "PostToolUse",
       tool_name: "WebSearch",
@@ -396,7 +413,7 @@ test("overlapping Activity states follow priority without crossing Session bindi
     });
     assert.equal(companion.pets()[0]?.activity, "Needs input");
 
-    await submitHook(companion.socketPath, {
+    await submitHook(companion, {
       session_id: "priority-session",
       hook_event_name: "PostToolUse",
       tool_name: "mcp__github__search_repositories",
@@ -404,7 +421,7 @@ test("overlapping Activity states follow priority without crossing Session bindi
     });
     assert.equal(companion.pets()[0]?.activity, "Needs input");
 
-    await submitHook(companion.socketPath, {
+    await submitHook(companion, {
       session_id: "priority-session",
       hook_event_name: "PostToolUse",
       tool_name: "Bash",
@@ -432,7 +449,7 @@ test("Activity state hooks neither create a Pet nor relaunch the Companion", asy
 
   await companion.start();
   try {
-    assert.equal(await submitHook(companion.socketPath, event), 0);
+    assert.equal(await submitHook(companion, event), 0);
     assert.deepEqual(companion.pets(), []);
     assert.deepEqual(windowCreations, []);
 
@@ -440,6 +457,7 @@ test("Activity state hooks neither create a Pet nor relaunch the Companion", asy
     assert.equal(
       await runCli(["hook"], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
         readInput: async () => JSON.stringify(event),
         startCompanion: async () => {
           companionStarts += 1;
@@ -466,6 +484,7 @@ test("a closed Pet can be spawned again", async () => {
     assert.equal(
       await runCli(["spawn", "--session-id", "closed-session"], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
       }),
       0,
     );
@@ -475,6 +494,7 @@ test("a closed Pet can be spawned again", async () => {
     assert.equal(
       await runCli(["spawn", "--session-id", "closed-session"], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
       }),
       0,
     );
@@ -497,6 +517,7 @@ test("sessions can spawn and despawn independently", async () => {
       assert.equal(
         await runCli(["spawn", "--session-id", sessionId], {
           socketPath: companion.socketPath,
+          stateDirectory: companion.stateDirectory,
         }),
         0,
       );
@@ -510,6 +531,7 @@ test("sessions can spawn and despawn independently", async () => {
       assert.equal(
         await runCli(["despawn", "--session-id", "first-session"], {
           socketPath: companion.socketPath,
+          stateDirectory: companion.stateDirectory,
         }),
         0,
       );
@@ -532,6 +554,7 @@ test("session end removes its Pet without relaunching the Companion", async () =
   let companionStarts = 0;
   const options = {
     socketPath: companion.socketPath,
+    stateDirectory: companion.stateDirectory,
     startCompanion: async () => {
       companionStarts += 1;
     },
@@ -549,6 +572,7 @@ test("session end removes its Pet without relaunching the Companion", async () =
     assert.equal(
       await runCli(["spawn", "--session-id", "ending-session"], {
         socketPath: companion.socketPath,
+        stateDirectory: companion.stateDirectory,
       }),
       0,
     );
@@ -577,6 +601,7 @@ test("quitting the Companion removes all Pets and restart starts empty", async (
       assert.equal(
         await runCli(["spawn", "--session-id", sessionId], {
           socketPath: companion.socketPath,
+          stateDirectory: companion.stateDirectory,
         }),
         0,
       );
@@ -656,7 +681,8 @@ async function testCompanion(
     createWindow,
     removeWindow,
     refreshWindow,
-    socketPath: path.join(runtimeDirectory, "control.sock"),
+    socketPath: controlEndpointIn(runtimeDirectory),
+    stateDirectory: runtimeDirectory,
   });
   return {
     companion,
@@ -682,9 +708,13 @@ function sendRaw(socketPath: string, message: string) {
   });
 }
 
-function submitHook(socketPath: string, event: Record<string, unknown>) {
+function submitHook(
+  companion: { socketPath: string; stateDirectory: string },
+  event: Record<string, unknown>,
+) {
   return runCli(["hook"], {
-    socketPath,
+    socketPath: companion.socketPath,
+    stateDirectory: companion.stateDirectory,
     readInput: async () => JSON.stringify(event),
   });
 }

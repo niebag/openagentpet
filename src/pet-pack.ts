@@ -1,23 +1,18 @@
-import { execFile } from "node:child_process";
 import {
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
   realpath,
   rename,
-  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
+import { readGif } from "./gif.js";
+import { applicationDataDirectory } from "./platform.js";
 import { ACTIVITIES, type Activity } from "./protocol.js";
-
-const execFileAsync = promisify(execFile);
 
 export type PetPack = {
   name: string;
@@ -28,18 +23,12 @@ export type PetPack = {
 export const defaultPetPackDirectory = fileURLToPath(
   new URL("../../public/default-pet-pack", import.meta.url),
 );
-const applicationSupportDirectory = path.join(
-  os.homedir(),
-  "Library",
-  "Application Support",
-  "OpenAgentPet",
-);
 export const userPetPackDirectory = path.join(
-  applicationSupportDirectory,
+  applicationDataDirectory,
   "Pet Packs",
 );
 export const petPackSelectionPath = path.join(
-  applicationSupportDirectory,
+  applicationDataDirectory,
   "selected-pack.json",
 );
 
@@ -170,40 +159,8 @@ export async function discoverPetPacks(
 }
 
 async function isTransparentGif(asset: string) {
-  const contents = await readFile(asset);
-  if (
-    contents.length < 14 ||
-    contents.subarray(0, 3).toString("ascii") !== "GIF" ||
-    contents.at(-1) !== 0x3b
-  ) return false;
-
-  const decodeDirectory = await mkdtemp(path.join(os.tmpdir(), "openagentpet-gif-"));
-  try {
-    const { stdout } = await execFileAsync(
-      "/usr/bin/sips",
-      ["-g", "format", "-g", "hasAlpha", asset],
-      { encoding: "utf8" },
-    );
-    if (!/^\s*format: gif\s*$/m.test(stdout) || !/^\s*hasAlpha: yes\s*$/m.test(stdout)) {
-      return false;
-    }
-    await execFileAsync("/usr/bin/sips", [
-      "-s",
-      "format",
-      "png",
-      "-z",
-      "1",
-      "1",
-      asset,
-      "--out",
-      path.join(decodeDirectory, "frame.png"),
-    ]);
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await rm(decodeDirectory, { recursive: true });
-  }
+  const report = readGif(await readFile(asset));
+  return report.valid && report.transparent;
 }
 
 async function findGifFiles(directory: string): Promise<string[]> {
