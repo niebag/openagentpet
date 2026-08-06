@@ -7,11 +7,11 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readGif } from "./gif.js";
+import { applicationDataDirectory } from "./platform.js";
 import { ACTIVITIES, type Activity } from "./protocol.js";
 
 export type PetPack = {
@@ -23,18 +23,12 @@ export type PetPack = {
 export const defaultPetPackDirectory = fileURLToPath(
   new URL("../../public/default-pet-pack", import.meta.url),
 );
-const applicationSupportDirectory = path.join(
-  os.homedir(),
-  "Library",
-  "Application Support",
-  "OpenAgentPet",
-);
 export const userPetPackDirectory = path.join(
-  applicationSupportDirectory,
+  applicationDataDirectory,
   "Pet Packs",
 );
 export const petPackSelectionPath = path.join(
-  applicationSupportDirectory,
+  applicationDataDirectory,
   "selected-pack.json",
 );
 

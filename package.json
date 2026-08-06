@@ -2,7 +2,7 @@
   "name": "openagentpet",
   "productName": "OpenAgentPet",
   "version": "1.2.0",
-  "description": "A floating macOS Pet for local Claude Code sessions",
+  "description": "A floating Pet for local Claude Code sessions",
   "type": "module",
   "bin": {
     "openagentpet": "dist/src/cli.js"
@@ -12,9 +12,6 @@
     "public",
     "LICENSE"
   ],
-  "os": [
-    "darwin"
-  ],
   "engines": {
     "node": ">=22.12.0"
   },
@@ -22,6 +19,7 @@
     "claude-code",
     "electron",
     "macos",
+    "windows",
     "desktop-companion"
   ],
   "author": "Niels Baggerman",

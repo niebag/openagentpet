@@ -9,6 +9,7 @@ import {
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createCompanion, defaultSocketPath } from "./companion.js";
+import { runtimeDirectory as defaultRuntimeDirectory } from "./platform.js";
 import {
   petPackSelectionPath as defaultPetPackSelectionPath,
   type PetPack,
@@ -19,25 +20,34 @@ const petPage = fileURLToPath(new URL("../../public/pet.html", import.meta.url))
 const appIcon = nativeImage.createFromPath(
   fileURLToPath(new URL("../../public/openagentpet-icon.png", import.meta.url)),
 );
+// The menu bar wants an 18pt template image that macOS recolours for the
+// current appearance; the Windows notification area wants a 16px icon it draws
+// as-is, so the template flag has to stay off there or it renders as a blob.
+const trayIconSize = process.platform === "darwin" ? 18 : 16;
 const trayIcon = nativeImage
   .createFromPath(
     fileURLToPath(
       new URL("../../public/openagentpet-tray-icon.png", import.meta.url),
     ),
   )
-  .resize({ width: 18, height: 18 });
-trayIcon.setTemplateImage(true);
+  .resize({ width: trayIconSize, height: trayIconSize });
+if (process.platform === "darwin") trayIcon.setTemplateImage(true);
+
+/** Matches the label row in the Pet page grid. */
+const petLabelHeight = 24;
 
 app.setName("OpenAgentPet");
 if (process.platform === "darwin") app.setActivationPolicy("accessory");
 
 type ElectronAppOptions = {
   socketPath?: string;
+  stateDirectory?: string;
   selectionPath?: string;
 };
 
 export async function startElectronApp({
   socketPath = defaultSocketPath,
+  stateDirectory = defaultRuntimeDirectory,
   selectionPath = defaultPetPackSelectionPath,
 }: ElectronAppOptions = {}) {
   await app.whenReady();
@@ -56,6 +66,36 @@ export async function startElectronApp({
 
   const tray = new Tray(trayIcon);
   tray.setToolTip("OpenAgentPet");
+  // macOS opens the menu on any click; Windows reserves left-click for the app.
+  if (process.platform === "win32") tray.on("click", () => tray.popUpContextMenu());
+
+  /**
+   * A Pet is a square of artwork above a fixed-height label. macOS expresses
+   * that as a 1:1 ratio plus extra height; Windows ignores the extra size
+   * argument and would square the whole window, so there the shape is held by
+   * hand for the edge the user is dragging.
+   */
+  const lockAspectRatio = (window: BrowserWindow) => {
+    if (process.platform !== "win32") {
+      window.setAspectRatio(1, { width: 0, height: petLabelHeight });
+      return;
+    }
+    window.on("will-resize", (event, newBounds, details) => {
+      const [minWidth] = window.getMinimumSize();
+      const [maxWidth] = window.getMaximumSize();
+      // Windows reports a plain "top" edge that the published types omit.
+      const edge: string = details.edge;
+      const dragged =
+        edge === "top" || edge === "bottom"
+          ? newBounds.height - petLabelHeight
+          : newBounds.width;
+      const width = Math.min(Math.max(dragged, minWidth), maxWidth);
+      const height = width + petLabelHeight;
+      if (width === newBounds.width && height === newBounds.height) return;
+      event.preventDefault();
+      window.setBounds({ ...newBounds, width, height });
+    });
+  };
 
   const applyWindowMode = (window: BrowserWindow) => {
     window.setIgnoreMouseEvents(locked);
@@ -128,6 +168,7 @@ export async function startElectronApp({
 
   const companion = createCompanion({
     socketPath,
+    stateDirectory,
     selectionPath,
     createWindow: (pet, options, onClosed, pack) => {
       const window = new BrowserWindow({
@@ -139,7 +180,7 @@ export async function startElectronApp({
           sandbox: true,
         },
       });
-      window.setAspectRatio(1, { width: 0, height: 24 });
+      lockAspectRatio(window);
       applyWindowMode(window);
       window.once("ready-to-show", () => {
         if (!hidden) window.showInactive();

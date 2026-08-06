@@ -7,21 +7,38 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const onWindows = process.platform === "win32";
+
+// npm, claude and the .bin shims are .cmd files on Windows, which only run
+// through a shell; the shell in turn needs paths with spaces quoted.
+const run = (command, args, options) =>
+  execFileAsync(
+    onWindows ? quote(command) : command,
+    onWindows ? args.map(quote) : args,
+    { ...options, shell: onWindows },
+  );
+const quote = (value) => (/\s/.test(value) ? `"${value}"` : value);
+const shim = (directory, name) =>
+  path.join(directory, "node_modules", ".bin", onWindows ? `${name}.cmd` : name);
+
 const root = fileURLToPath(new URL("../", import.meta.url));
 const releaseVersion = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).version;
 const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "openagentpet-artifact-"));
 
 try {
-  assert.equal(process.platform, "darwin", "Release artifacts support macOS only");
+  assert.ok(
+    onWindows || process.platform === "darwin",
+    "Release artifacts support macOS and Windows only",
+  );
 
-  await execFileAsync("npm", ["pack", "--pack-destination", temporaryDirectory], {
+  await run("npm", ["pack", "--pack-destination", temporaryDirectory], {
     cwd: root,
   });
   const tarball = (await readdir(temporaryDirectory)).find((file) => file.endsWith(".tgz"));
   assert.ok(tarball, "npm pack did not produce a tarball");
 
   const installDirectory = path.join(temporaryDirectory, "install");
-  await execFileAsync(
+  await run(
     "npm",
     [
       "install",
@@ -45,16 +62,14 @@ try {
   assert.equal(packageJson.version, releaseVersion);
   assert.equal(packageJson.bin.openagentpet, "dist/src/cli.js");
 
-  const { stdout: version } = await execFileAsync(
-    path.join(installDirectory, "node_modules", ".bin", "openagentpet"),
-    ["--version"],
-  );
-  assert.equal(version, `${releaseVersion}\n`);
+  const { stdout: version } = await run(shim(installDirectory, "openagentpet"), [
+    "--version",
+  ]);
+  assert.equal(version.trim(), releaseVersion);
 
-  const { stdout: electronVersion } = await execFileAsync(
-    path.join(installDirectory, "node_modules", ".bin", "electron"),
-    ["--version"],
-  );
+  const { stdout: electronVersion } = await run(shim(installDirectory, "electron"), [
+    "--version",
+  ]);
   assert.match(electronVersion, /v43\./);
 
   assert.deepEqual(await packageFiles(packageDirectory), [
@@ -64,7 +79,9 @@ try {
     "dist/src/cli.js",
     "dist/src/companion.js",
     "dist/src/electron.js",
+    "dist/src/gif.js",
     "dist/src/pet-pack.js",
+    "dist/src/platform.js",
     "dist/src/protocol.js",
     "package.json",
     "public/default-pet-pack/clawd-building.gif",
@@ -82,27 +99,31 @@ try {
   const installedSmoke = path.join(packageDirectory, "dist", "test", "electron-smoke.js");
   await mkdir(path.dirname(installedSmoke), { recursive: true });
   await copyFile(path.join(root, "dist", "test", "electron-smoke.js"), installedSmoke);
-  const { stdout: smokeOutput } = await execFileAsync(
-    path.join(installDirectory, "node_modules", ".bin", "electron"),
+  const { stdout: smokeOutput, stderr: smokeError } = await run(
+    shim(installDirectory, "electron"),
     [installedSmoke],
   );
-  assert.match(smokeOutput, /macOS Electron smoke test passed/);
+  assert.match(
+    smokeOutput,
+    /Electron smoke test passed on/,
+    `Installed Companion smoke test did not pass: ${smokeError}`,
+  );
 
   const claudeEnvironment = {
     ...process.env,
     CLAUDE_CONFIG_DIR: path.join(temporaryDirectory, "claude"),
   };
-  await execFileAsync(
+  await run(
     "claude",
     ["plugin", "marketplace", "add", root, "--scope", "user"],
     { env: claudeEnvironment },
   );
-  await execFileAsync(
+  await run(
     "claude",
     ["plugin", "install", "openagentpet@openagentpet", "--scope", "user"],
     { env: claudeEnvironment },
   );
-  const { stdout: pluginsJson } = await execFileAsync(
+  const { stdout: pluginsJson } = await run(
     "claude",
     ["plugin", "list", "--json"],
     { env: claudeEnvironment },
@@ -136,7 +157,8 @@ async function packageFiles(directory, prefix = "") {
   })) {
     const relativePath = path.join(prefix, entry.name);
     if (entry.isDirectory()) files.push(...(await packageFiles(directory, relativePath)));
-    else files.push(relativePath);
+    // The allowlist is written with the separator npm uses in the tarball.
+    else files.push(relativePath.split(path.sep).join("/"));
   }
   return files.sort();
 }

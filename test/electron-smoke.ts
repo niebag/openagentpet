@@ -9,11 +9,14 @@ import { setTimeout } from "node:timers/promises";
 import { app, BrowserWindow, Menu, type MenuItem } from "electron";
 
 import { runCli } from "../src/cli.js";
+import { controlEndpointIn } from "../src/platform.js";
 import { startElectronApp } from "../src/electron.js";
 import { defaultPetPackDirectory } from "../src/pet-pack.js";
 
-if (process.platform !== "darwin") {
-  console.log("macOS Electron smoke test skipped");
+const onMacOS = process.platform === "darwin";
+
+if (!onMacOS && process.platform !== "win32") {
+  console.log("Electron smoke test skipped: unsupported platform");
   app.quit();
 } else {
   void app.whenReady().then(runSmoke).catch(fail);
@@ -21,9 +24,12 @@ if (process.platform !== "darwin") {
 
 async function runSmoke() {
   assert.equal(app.getName(), "OpenAgentPet");
-  const dock = app.dock;
-  assert.ok(dock);
-  assert.equal(dock.isVisible(), false);
+  if (onMacOS) {
+    // The accessory activation policy keeps the Companion out of the Dock.
+    const dock = app.dock;
+    assert.ok(dock);
+    assert.equal(dock.isVisible(), false);
+  }
 
   const aspectRatios = new Map<
     number,
@@ -45,7 +51,8 @@ async function runSmoke() {
 
   const runtimeDirectory = await mkdtemp(path.join(os.tmpdir(), "openagentpet-smoke-"));
   const companionApp = await startElectronApp({
-    socketPath: path.join(runtimeDirectory, "control.sock"),
+    socketPath: controlEndpointIn(runtimeDirectory),
+    stateDirectory: runtimeDirectory,
     selectionPath: path.join(runtimeDirectory, "selection.json"),
   });
 
@@ -53,8 +60,12 @@ async function runSmoke() {
     assert.equal(Menu.getApplicationMenu(), null);
     assert.equal(companionApp.tray().isDestroyed(), false);
     assert.equal(companionApp.icon().isEmpty(), false);
-    assert.deepEqual(companionApp.trayIcon().getSize(), { width: 18, height: 18 });
-    assert.equal(companionApp.trayIcon().isTemplateImage(), true);
+    const traySize = onMacOS ? 18 : 16;
+    assert.deepEqual(companionApp.trayIcon().getSize(), {
+      width: traySize,
+      height: traySize,
+    });
+    assert.equal(companionApp.trayIcon().isTemplateImage(), onMacOS);
     assert.equal(companionApp.tray().getTitle(), "");
     const longLabel = "very-long-project-name-".repeat(5);
     for (const [sessionId, currentWorkingDirectory] of [
@@ -64,6 +75,7 @@ async function runSmoke() {
       assert.equal(
         await runCli(["spawn", "--session-id", sessionId], {
           socketPath: companionApp.companion.socketPath,
+          stateDirectory: companionApp.companion.stateDirectory,
           currentWorkingDirectory,
         }),
         0,
@@ -79,10 +91,11 @@ async function runSmoke() {
       assert.equal(window.isVisible(), true);
       assert.equal(window.isMovable(), true);
       assert.equal(window.isResizable(), true);
-      assert.deepEqual(aspectRatios.get(window.id), {
-        ratio: 1,
-        extraSize: { width: 0, height: 24 },
-      });
+      assert.deepEqual(
+        aspectRatios.get(window.id),
+        // Windows holds the shape through will-resize instead.
+        onMacOS ? { ratio: 1, extraSize: { width: 0, height: 24 } } : undefined,
+      );
       assert.equal(pointerModes.get(window.id)?.at(-1), false);
       assert.equal(
         await window.webContents.executeJavaScript(
@@ -151,6 +164,7 @@ async function runSmoke() {
     assert.equal(
       await runCli(["spawn", "--session-id", "locked-smoke"], {
         socketPath: companionApp.companion.socketPath,
+        stateDirectory: companionApp.companion.stateDirectory,
       }),
       0,
     );
@@ -169,6 +183,7 @@ async function runSmoke() {
     assert.equal(
       await runCli(["despawn", "--session-id", "locked-smoke"], {
         socketPath: companionApp.companion.socketPath,
+        stateDirectory: companionApp.companion.stateDirectory,
       }),
       0,
     );
@@ -179,6 +194,7 @@ async function runSmoke() {
     assert.equal(
       await runCli(["hook"], {
         socketPath: companionApp.companion.socketPath,
+        stateDirectory: companionApp.companion.stateDirectory,
         readInput: async () =>
           JSON.stringify({
             session_id: "smoke-one",
@@ -247,6 +263,7 @@ async function runSmoke() {
     assert.equal(
       await runCli(["spawn", "--session-id", "smoke-one"], {
         socketPath: companionApp.companion.socketPath,
+        stateDirectory: companionApp.companion.stateDirectory,
         currentWorkingDirectory: "/private/renamed-project",
         updateCheckPath: path.join(runtimeDirectory, "update-check.json"),
         packageVersion: "1.0.0",
@@ -276,6 +293,7 @@ async function runSmoke() {
     assert.equal(
       await runCli(["pack", "use", customPack], {
         socketPath: companionApp.companion.socketPath,
+        stateDirectory: companionApp.companion.stateDirectory,
       }),
       0,
     );
@@ -306,6 +324,7 @@ async function runSmoke() {
     assert.equal(
       await runCli(["despawn", "--session-id", "smoke-two"], {
         socketPath: companionApp.companion.socketPath,
+        stateDirectory: companionApp.companion.stateDirectory,
       }),
       0,
     );
@@ -314,6 +333,7 @@ async function runSmoke() {
     assert.equal(
       await runCli(["spawn", "--session-id", "session-end-smoke"], {
         socketPath: companionApp.companion.socketPath,
+        stateDirectory: companionApp.companion.stateDirectory,
       }),
       0,
     );
@@ -327,6 +347,7 @@ async function runSmoke() {
     assert.equal(
       await runCli(["session-end"], {
         socketPath: companionApp.companion.socketPath,
+        stateDirectory: companionApp.companion.stateDirectory,
         readInput: async () =>
           JSON.stringify({
             session_id: "session-end-smoke",
@@ -344,7 +365,7 @@ async function runSmoke() {
       assert.deepEqual(companionApp.companion.pets(), []);
       assert.equal(windows.every((window) => window.isDestroyed()), true);
       rmSync(runtimeDirectory, { recursive: true });
-      console.log("macOS Electron smoke test passed");
+      console.log(`Electron smoke test passed on ${process.platform}`);
     });
     click(companionApp.menu().getMenuItemById("quit"));
   } catch (error) {
@@ -362,6 +383,7 @@ async function runSmoke() {
     assert.equal(
       await runCli(["hook"], {
         socketPath: companionApp.companion.socketPath,
+        stateDirectory: companionApp.companion.stateDirectory,
         readInput: async () => JSON.stringify(event),
       }),
       0,
@@ -424,7 +446,10 @@ async function waitForReducedFrame(window: BrowserWindow) {
 }
 
 async function waitUntil(check: () => boolean | Promise<boolean>, failure: string) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  // A freshly installed Companion loads its first Pet page well past a second
+  // on Windows, so the budget is generous; a ready condition still returns at
+  // the first poll.
+  for (let attempt = 0; attempt < 1_000; attempt += 1) {
     if (await check()) return;
     await setTimeout(10);
   }

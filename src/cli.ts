@@ -4,6 +4,7 @@ import { realpathSync } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import type { Readable, Writable } from "node:stream";
@@ -12,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 import { activityForHook, resetHookState } from "./claude-code.js";
 import { defaultSocketPath } from "./companion.js";
+import { runtimeDirectory as defaultRuntimeDirectory } from "./platform.js";
 import {
   discoverPetPacks,
   petPackSelectionPath as defaultPetPackSelectionPath,
@@ -39,8 +41,10 @@ type RunOptions = {
   input?: Readable;
   output?: Writable;
   selectionPath?: string;
+  stateDirectory?: string;
   platform?: NodeJS.Platform;
   nodeVersion?: string;
+  osRelease?: string;
   runProcess?: (command: string, args: string[]) => Promise<ProcessResult>;
   ask?: (prompt: string) => Promise<string>;
   packageVersion?: string;
@@ -64,8 +68,10 @@ export async function runCli(
     input = process.stdin,
     output = process.stdout,
     selectionPath = defaultPetPackSelectionPath,
+    stateDirectory = defaultRuntimeDirectory,
     platform = process.platform,
     nodeVersion = process.versions.node,
+    osRelease = os.release(),
     runProcess = execute,
     ask,
     packageVersion = readPackageVersion(),
@@ -82,17 +88,23 @@ export async function runCli(
     return 0;
   }
   if (command === "install" && argv.length === 1) {
-    if (platform !== "darwin") {
-      writeError("OpenAgentPet requires macOS 13 or newer.");
+    if (platform !== "darwin" && platform !== "win32") {
+      writeError("OpenAgentPet requires macOS 13 or newer, or Windows 10 or newer.");
       return 1;
     }
     if (!versionAtLeast(nodeVersion, [22, 12])) {
       writeError("OpenAgentPet requires Node.js 22.12 or newer. Update Node.js and retry.");
       return 1;
     }
-    const macOS = await runProcess("sw_vers", ["-productVersion"]);
-    if (macOS.status !== 0 || !versionAtLeast(macOS.stdout.trim(), [13])) {
-      writeError("OpenAgentPet requires macOS 13 or newer. Update macOS and retry.");
+    if (platform === "darwin") {
+      const macOS = await runProcess("sw_vers", ["-productVersion"]);
+      if (macOS.status !== 0 || !versionAtLeast(macOS.stdout.trim(), [13])) {
+        writeError("OpenAgentPet requires macOS 13 or newer. Update macOS and retry.");
+        return 1;
+      }
+    } else if (!versionAtLeast(osRelease, [10, 0, 17763])) {
+      // Electron needs Windows 10 1809 or newer; os.release() reports the NT build.
+      writeError("OpenAgentPet requires Windows 10 version 1809 or newer. Update Windows and retry.");
       return 1;
     }
     const npm = await runProcess("npm", ["--version"]);
@@ -210,7 +222,6 @@ export async function runCli(
       prompt?.close();
     }
   }
-  const stateDirectory = path.dirname(socketPath);
   let message: Command;
   if (command === "pack" && flag === "use" && extra.length === 0) {
     let packPath = sessionId;
@@ -339,6 +350,13 @@ async function choosePetPack(packs: PetPack[], input: Readable, output: Writable
   }
 }
 
+/**
+ * Windows accepts a connection on a named pipe a moment before the Companion
+ * serves it, which ends the connection without a reply. An empty response
+ * means the Companion is not listening yet, not that the command failed.
+ */
+const NOT_SERVING = "OPENAGENTPET_NOT_SERVING";
+
 function sendCommand(socketPath: string, command: Command) {
   return new Promise<string>((resolve, reject) => {
     const socket = net.createConnection(socketPath);
@@ -346,7 +364,16 @@ function sendCommand(socketPath: string, command: Command) {
     socket.setEncoding("utf8");
     socket.on("connect", () => socket.end(`${JSON.stringify(command)}\n`));
     socket.on("data", (chunk) => (output += chunk));
-    socket.on("end", () => resolve(output));
+    socket.on("end", () => {
+      if (output) resolve(output);
+      else {
+        reject(
+          Object.assign(new Error("The Companion closed the connection"), {
+            code: NOT_SERVING,
+          }),
+        );
+      }
+    });
     socket.on("error", reject);
   });
 }
@@ -365,7 +392,7 @@ async function sendWhenReady(socketPath: string, command: Command) {
 
 function isUnavailable(error: unknown) {
   const code = (error as NodeJS.ErrnoException).code;
-  return code === "ENOENT" || code === "ECONNREFUSED";
+  return code === "ENOENT" || code === "ECONNREFUSED" || code === NOT_SERVING;
 }
 
 function launchCompanion() {
@@ -399,7 +426,13 @@ function versionAtLeast(version: string, minimum: number[]) {
 
 function execute(command: string, args: string[]) {
   return new Promise<ProcessResult>((resolve) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      // Windows ships npm and claude as .cmd shims that spawn cannot run
+      // without a shell. Every command and argument here is a literal or a
+      // version string already matched against /^\d+\.\d+\.\d+$/.
+      shell: process.platform === "win32",
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");
