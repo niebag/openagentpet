@@ -32,7 +32,7 @@ export async function startElectronApp({
     string,
     { window: BrowserWindow; pet: Pet; pack: PetPack }
   >();
-  let arranging = false;
+  let locked = false;
   let hidden = false;
   let reducedMotion = false;
   let quitApp = () => undefined;
@@ -43,8 +43,9 @@ export async function startElectronApp({
   tray.setToolTip("OpenAgentPet");
 
   const applyWindowMode = (window: BrowserWindow) => {
-    window.setIgnoreMouseEvents(!arranging);
-    window.setMovable(arranging);
+    window.setIgnoreMouseEvents(locked);
+    window.setMovable(!locked);
+    window.setResizable(!locked);
   };
 
   const loadPet = (window: BrowserWindow, pet: Pet, pack: PetPack) =>
@@ -67,12 +68,12 @@ export async function startElectronApp({
   const setMenu = () => {
     const template: MenuItemConstructorOptions[] = [
       {
-        id: "arrange",
-        label: "Arrange Pets",
+        id: "lock",
+        label: "Lock Pets",
         type: "checkbox",
-        checked: arranging,
+        checked: locked,
         click: (item) => {
-          arranging = item.checked;
+          locked = item.checked;
           for (const { window } of windows.values()) applyWindowMode(window);
         },
       },
@@ -122,6 +123,7 @@ export async function startElectronApp({
           sandbox: true,
         },
       });
+      window.setAspectRatio(1, { width: 0, height: 24 });
       applyWindowMode(window);
       window.once("ready-to-show", () => {
         if (!hidden) window.showInactive();

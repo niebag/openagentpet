@@ -20,8 +20,17 @@ if (process.platform !== "darwin") {
 }
 
 async function runSmoke() {
+  const aspectRatios = new Map<
+    number,
+    { ratio: number; extraSize?: { width: number; height: number } }
+  >();
   const pointerModes = new Map<number, boolean[]>();
+  const setAspectRatio = BrowserWindow.prototype.setAspectRatio;
   const setIgnoreMouseEvents = BrowserWindow.prototype.setIgnoreMouseEvents;
+  BrowserWindow.prototype.setAspectRatio = function (ratio, extraSize) {
+    aspectRatios.set(this.id, { ratio, ...(extraSize && { extraSize }) });
+    return setAspectRatio.call(this, ratio, extraSize);
+  };
   BrowserWindow.prototype.setIgnoreMouseEvents = function (ignore, options) {
     const modes = pointerModes.get(this.id) ?? [];
     modes.push(ignore);
@@ -57,8 +66,13 @@ async function runSmoke() {
     for (const window of windows) {
       assert.equal(window.isAlwaysOnTop(), true);
       assert.equal(window.isVisible(), true);
-      assert.equal(window.isMovable(), false);
-      assert.equal(pointerModes.get(window.id)?.at(-1), true);
+      assert.equal(window.isMovable(), true);
+      assert.equal(window.isResizable(), true);
+      assert.deepEqual(aspectRatios.get(window.id), {
+        ratio: 1,
+        extraSize: { width: 0, height: 24 },
+      });
+      assert.equal(pointerModes.get(window.id)?.at(-1), false);
       assert.equal(
         await window.webContents.executeJavaScript(
           'getComputedStyle(document.body).getPropertyValue("-webkit-app-region")',
@@ -98,22 +112,56 @@ async function runSmoke() {
     const [petX, petY] = petWindow.getPosition();
     windows[1]!.setPosition(petX + 350, petY);
 
-    clickCheckbox(companionApp.menu().getMenuItemById("arrange"), true);
-    for (const window of windows) {
-      assert.equal(window.isMovable(), true);
-      assert.equal(pointerModes.get(window.id)?.at(-1), false);
-    }
-    const originalPosition = petWindow.getPosition();
-    petWindow.setPosition(originalPosition[0] + 30, originalPosition[1] + 30);
-    const arrangedPosition = petWindow.getPosition();
-    assert.notDeepEqual(arrangedPosition, originalPosition);
+    assert.deepEqual(petWindow.getSize(), [320, 344]);
+    petWindow.setSize(100, 100);
+    assert.deepEqual(petWindow.getSize(), [160, 184]);
+    petWindow.setSize(800, 800);
+    assert.deepEqual(petWindow.getSize(), [640, 664]);
+    assert.equal(
+      await petWindow.webContents.executeJavaScript(`
+        const artwork = document.querySelector(".artwork");
+        artwork.clientWidth === artwork.clientHeight &&
+        getComputedStyle(document.querySelector("#label")).fontSize === "13px"
+      `),
+      true,
+    );
+    const originalBounds = petWindow.getBounds();
+    petWindow.setPosition(originalBounds.x + 30, originalBounds.y + 30);
+    const retainedBounds = petWindow.getBounds();
 
-    clickCheckbox(companionApp.menu().getMenuItemById("arrange"), false);
-    assert.deepEqual(petWindow.getPosition(), arrangedPosition);
+    clickCheckbox(companionApp.menu().getMenuItemById("lock"), true);
     for (const window of windows) {
       assert.equal(window.isMovable(), false);
+      assert.equal(window.isResizable(), false);
       assert.equal(pointerModes.get(window.id)?.at(-1), true);
     }
+    assert.deepEqual(petWindow.getBounds(), retainedBounds);
+
+    assert.equal(
+      await runCli(["spawn", "--session-id", "locked-smoke"], {
+        socketPath: companionApp.companion.socketPath,
+      }),
+      0,
+    );
+    await waitUntil(() => companionApp.windows().length === 3, "Locked Pet did not appear");
+    const lockedWindow = companionApp.windows().find((window) => !windows.includes(window))!;
+    assert.equal(lockedWindow.isMovable(), false);
+    assert.equal(lockedWindow.isResizable(), false);
+    assert.equal(pointerModes.get(lockedWindow.id)?.at(-1), true);
+
+    clickCheckbox(companionApp.menu().getMenuItemById("lock"), false);
+    for (const window of companionApp.windows()) {
+      assert.equal(window.isMovable(), true);
+      assert.equal(window.isResizable(), true);
+      assert.equal(pointerModes.get(window.id)?.at(-1), false);
+    }
+    assert.equal(
+      await runCli(["despawn", "--session-id", "locked-smoke"], {
+        socketPath: companionApp.companion.socketPath,
+      }),
+      0,
+    );
+    await waitUntil(() => lockedWindow.isDestroyed(), "Locked Pet window stayed open");
 
     click(companionApp.menu().getMenuItemById("visibility"));
     assert.equal(windows.every((window) => !window.isVisible()), true);
@@ -133,6 +181,7 @@ async function runSmoke() {
     await waitForLoad(windows[0]!);
     assert.equal(windows[0]!.isVisible(), false);
     assert.equal(await windows[0]!.webContents.executeJavaScript("location.hash"), "#Working");
+    assert.deepEqual(petWindow.getBounds(), retainedBounds);
 
     click(companionApp.menu().getMenuItemById("visibility"));
     assert.equal(windows.every((window) => window.isVisible()), true);
@@ -181,6 +230,7 @@ async function runSmoke() {
       { session_id: "smoke-one", hook_event_name: "Stop" },
       "Idle",
     );
+    assert.deepEqual(petWindow.getBounds(), retainedBounds);
 
     const updateCommands: string[] = [];
     assert.equal(
@@ -222,6 +272,7 @@ async function runSmoke() {
       petWindow,
       'document.querySelector("img").src.includes("/custom-pack/")',
     );
+    assert.deepEqual(petWindow.getBounds(), retainedBounds);
 
     clickCheckbox(companionApp.menu().getMenuItemById("reduced-motion"), true);
     await Promise.all(windows.map(waitForReducedFrame));
@@ -238,6 +289,7 @@ async function runSmoke() {
         firstFrame,
       );
     }
+    assert.deepEqual(petWindow.getBounds(), retainedBounds);
 
     const despawnedWindow = windows[1]!;
     assert.equal(

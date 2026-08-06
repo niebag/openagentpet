@@ -32,7 +32,7 @@
   </a>
 </p>
 
-OpenAgentPet turns observable activity from each local Claude Code session into a small animated Pet that floats above your macOS windows. It stays click-through while you work and sends no prompt or transcript data off your Mac.
+OpenAgentPet turns observable activity from each local Claude Code session into a small animated Pet that floats above your macOS windows. Pets are movable and resizable by default, and OpenAgentPet sends no prompt or transcript data off your Mac.
 
 > [!NOTE]
 > OpenAgentPet 1.0.0 is available from npm. The quick-start command installs the published release.
@@ -109,7 +109,7 @@ When events overlap, the display priority is Needs input, Researching, Working, 
 
 One tray menu controls every Pet in the current Companion run:
 
-- **Arrange Pets** temporarily enables pointer input so you can drag Pets. Leaving Arrange mode restores click-through behavior and keeps their positions until the Companion quits.
+- **Lock Pets** fixes every Pet at its current position and size and makes it click-through. Pets start unlocked, so you can move and resize each one from a 320 × 320 artwork area down to 160 × 160 or up to 640 × 640. Unlocking restores pointer input, movement, and resizing. Positions, sizes, and this setting last only for the current Companion run.
 - **Hide Pets** removes all Pets from view without stopping their Activity updates. **Show Pets** restores them in their current states.
 - **Reduced Motion** shows a stable frame for each Pet's current Activity state instead of playing its GIF.
 - **Quit OpenAgentPet** removes every Pet and stops the Companion. Restarting the Companion does not restore old Pets.
