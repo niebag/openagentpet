@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const root = fileURLToPath(new URL("../", import.meta.url));
+const releaseVersion = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).version;
 const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "openagentpet-artifact-"));
 
 try {
@@ -41,14 +42,14 @@ try {
   const packageJson = JSON.parse(
     await readFile(path.join(packageDirectory, "package.json"), "utf8"),
   );
-  assert.equal(packageJson.version, "1.0.0");
+  assert.equal(packageJson.version, releaseVersion);
   assert.equal(packageJson.bin.openagentpet, "dist/src/cli.js");
 
   const { stdout: version } = await execFileAsync(
     path.join(installDirectory, "node_modules", ".bin", "openagentpet"),
     ["--version"],
   );
-  assert.equal(version, "1.0.0\n");
+  assert.equal(version, `${releaseVersion}\n`);
 
   const { stdout: electronVersion } = await execFileAsync(
     path.join(installDirectory, "node_modules", ".bin", "electron"),
@@ -116,7 +117,7 @@ try {
     ),
     {
       id: "openagentpet@openagentpet",
-      version: "1.0.0",
+      version: releaseVersion,
       scope: "user",
       enabled: true,
     },
