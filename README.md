@@ -7,8 +7,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/dynamic/json.svg?url=https%3A%2F%2Fraw.githubusercontent.com%2Fniebag%2Fopenagentpet%2Fmain%2Fpackage.json&amp;query=%24.version&amp;label=npm&amp;logo=npm&amp;variant=secondary&amp;size=sm&amp;mode=dark" />
-    <img src="https://shieldcn.dev/badge/dynamic/json.svg?url=https%3A%2F%2Fraw.githubusercontent.com%2Fniebag%2Fopenagentpet%2Fmain%2Fpackage.json&amp;query=%24.version&amp;label=npm&amp;logo=npm&amp;variant=secondary&amp;size=sm&amp;mode=light" alt="OpenAgentPet npm package version" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/npm/openagentpet.svg?variant=secondary&amp;size=sm&amp;mode=dark" />
+    <img src="https://shieldcn.dev/npm/openagentpet.svg?variant=secondary&amp;size=sm&amp;mode=light" alt="OpenAgentPet npm package version" />
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/github/ci/niebag/openagentpet.svg?workflow=tests.yml&amp;branch=main&amp;variant=secondary&amp;size=sm&amp;mode=dark" />
