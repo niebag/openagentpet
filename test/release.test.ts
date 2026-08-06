@@ -6,13 +6,13 @@ import test from "node:test";
 import { runCli } from "../src/cli.js";
 
 const root = new URL("../../", import.meta.url);
+const packageJson = JSON.parse(
+  await readFile(new URL("package.json", root), "utf8"),
+) as Record<string, unknown>;
+const releaseVersion = packageJson.version as string;
 
 test("the public npm package has release metadata and a narrow file allowlist", async () => {
-  const packageJson = JSON.parse(
-    await readFile(new URL("package.json", root), "utf8"),
-  ) as Record<string, unknown>;
-
-  assert.equal(packageJson.version, "1.0.0");
+  assert.match(releaseVersion, /^\d+\.\d+\.\d+$/);
   assert.equal(packageJson.license, "MIT");
   assert.deepEqual(packageJson.os, ["darwin"]);
   assert.deepEqual(packageJson.files, ["dist/src", "public", "LICENSE"]);
@@ -35,7 +35,6 @@ test("the npm package and Claude Code marketplace publish the same release", asy
     ),
   );
 
-  assert.equal(packageJson.version, "1.0.0");
   assert.equal(marketplaceJson.plugins?.[0]?.version, packageJson.version);
   assert.equal(marketplaceJson.plugins?.[0]?.license, "MIT");
   assert.equal(
@@ -68,6 +67,6 @@ test("the public command reports its release version", async () => {
     },
   });
 
-  assert.equal(await runCli(["--version"], { output, packageVersion: "1.0.0" }), 0);
-  assert.equal(text, "1.0.0\n");
+  assert.equal(await runCli(["--version"], { output, packageVersion: releaseVersion }), 0);
+  assert.equal(text, `${releaseVersion}\n`);
 });

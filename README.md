@@ -31,7 +31,7 @@
 OpenAgentPet turns observable activity from each local Claude Code session into a small animated Pet that floats above your macOS windows. Pets are movable and resizable by default, and OpenAgentPet sends no prompt or transcript data off your Mac.
 
 > [!NOTE]
-> OpenAgentPet 1.0.0 is available from npm. The quick-start command installs the published release.
+> OpenAgentPet 1.1.0 is available from npm. The quick-start command installs the published release.
 
 ## Contents
 
