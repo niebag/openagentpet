@@ -16,6 +16,12 @@ import {
 import type { Pet } from "./protocol.js";
 
 const petPage = fileURLToPath(new URL("../../public/pet.html", import.meta.url));
+const appIcon = nativeImage.createFromPath(
+  fileURLToPath(new URL("../../public/openagentpet-icon.png", import.meta.url)),
+);
+
+app.setName("OpenAgentPet");
+if (process.platform === "darwin") app.setActivationPolicy("accessory");
 
 type ElectronAppOptions = {
   socketPath?: string;
@@ -27,6 +33,8 @@ export async function startElectronApp({
   selectionPath = defaultPetPackSelectionPath,
 }: ElectronAppOptions = {}) {
   await app.whenReady();
+  Menu.setApplicationMenu(null);
+  app.dock?.setIcon(appIcon);
 
   const windows = new Map<
     string,
@@ -38,7 +46,7 @@ export async function startElectronApp({
   let quitApp = () => undefined;
   let menu: Menu;
 
-  const tray = new Tray(nativeImage.createEmpty());
+  const tray = new Tray(appIcon);
   tray.setTitle("🐾");
   tray.setToolTip("OpenAgentPet");
 
@@ -117,6 +125,7 @@ export async function startElectronApp({
     createWindow: (pet, options, onClosed, pack) => {
       const window = new BrowserWindow({
         ...options,
+        icon: appIcon,
         webPreferences: {
           contextIsolation: true,
           nodeIntegration: false,
@@ -183,7 +192,9 @@ export async function startElectronApp({
 
   return {
     companion,
+    icon: () => appIcon,
     menu: () => menu,
+    tray: () => tray,
     windows: () => [...windows.values()].map(({ window }) => window),
   };
 }
