@@ -72,6 +72,7 @@ try {
     "public/default-pet-pack/clawd-thinking.gif",
     "public/default-pet-pack/clawd-vibing.gif",
     "public/default-pet-pack/manifest.json",
+    "public/openagentpet-icon.png",
     "public/pet.html",
     "public/pet.js",
   ]);

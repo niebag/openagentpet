@@ -1,5 +1,6 @@
 {
   "name": "openagentpet",
+  "productName": "OpenAgentPet",
   "version": "1.0.0",
   "description": "A floating macOS Pet for local Claude Code sessions",
   "type": "module",

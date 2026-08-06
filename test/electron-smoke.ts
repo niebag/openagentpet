@@ -6,7 +6,7 @@ import path from "node:path";
 import { Writable } from "node:stream";
 import { setTimeout } from "node:timers/promises";
 
-import { app, BrowserWindow, type MenuItem } from "electron";
+import { app, BrowserWindow, Menu, type MenuItem } from "electron";
 
 import { runCli } from "../src/cli.js";
 import { startElectronApp } from "../src/electron.js";
@@ -20,6 +20,11 @@ if (process.platform !== "darwin") {
 }
 
 async function runSmoke() {
+  assert.equal(app.getName(), "OpenAgentPet");
+  const dock = app.dock;
+  assert.ok(dock);
+  assert.equal(dock.isVisible(), false);
+
   const aspectRatios = new Map<
     number,
     { ratio: number; extraSize?: { width: number; height: number } }
@@ -45,6 +50,9 @@ async function runSmoke() {
   });
 
   try {
+    assert.equal(Menu.getApplicationMenu(), null);
+    assert.equal(companionApp.tray().isDestroyed(), false);
+    assert.equal(companionApp.icon().isEmpty(), false);
     const longLabel = "very-long-project-name-".repeat(5);
     for (const [sessionId, currentWorkingDirectory] of [
       ["smoke-one", "/private/openagentpet"],
