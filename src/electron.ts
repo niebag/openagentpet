@@ -19,6 +19,14 @@ const petPage = fileURLToPath(new URL("../../public/pet.html", import.meta.url))
 const appIcon = nativeImage.createFromPath(
   fileURLToPath(new URL("../../public/openagentpet-icon.png", import.meta.url)),
 );
+const trayIcon = nativeImage
+  .createFromPath(
+    fileURLToPath(
+      new URL("../../public/openagentpet-tray-icon.png", import.meta.url),
+    ),
+  )
+  .resize({ width: 18, height: 18 });
+trayIcon.setTemplateImage(true);
 
 app.setName("OpenAgentPet");
 if (process.platform === "darwin") app.setActivationPolicy("accessory");
@@ -46,8 +54,7 @@ export async function startElectronApp({
   let quitApp = () => undefined;
   let menu: Menu;
 
-  const tray = new Tray(appIcon);
-  tray.setTitle("🐾");
+  const tray = new Tray(trayIcon);
   tray.setToolTip("OpenAgentPet");
 
   const applyWindowMode = (window: BrowserWindow) => {
@@ -195,6 +202,7 @@ export async function startElectronApp({
     icon: () => appIcon,
     menu: () => menu,
     tray: () => tray,
+    trayIcon: () => trayIcon,
     windows: () => [...windows.values()].map(({ window }) => window),
   };
 }

@@ -53,6 +53,9 @@ async function runSmoke() {
     assert.equal(Menu.getApplicationMenu(), null);
     assert.equal(companionApp.tray().isDestroyed(), false);
     assert.equal(companionApp.icon().isEmpty(), false);
+    assert.deepEqual(companionApp.trayIcon().getSize(), { width: 18, height: 18 });
+    assert.equal(companionApp.trayIcon().isTemplateImage(), true);
+    assert.equal(companionApp.tray().getTitle(), "");
     const longLabel = "very-long-project-name-".repeat(5);
     for (const [sessionId, currentWorkingDirectory] of [
       ["smoke-one", "/private/openagentpet"],
