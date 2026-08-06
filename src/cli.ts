@@ -21,7 +21,10 @@ import {
 } from "./pet-pack.js";
 import {
   activityCommand,
+  isPetLabel,
+  MAX_PET_LABEL_LENGTH,
   packUseCommand,
+  PROTOCOL_MISMATCH_ERROR,
   removeCommand,
   spawnCommand,
   type Command,
@@ -43,6 +46,7 @@ type RunOptions = {
   packageVersion?: string;
   updateCheckPath?: string | false;
   now?: () => number;
+  currentWorkingDirectory?: string;
 };
 
 type ProcessResult = { status: number; stdout: string; stderr: string };
@@ -69,6 +73,7 @@ export async function runCli(
       ? path.join(path.dirname(defaultPetPackSelectionPath), "update-check.json")
       : false,
     now = Date.now,
+    currentWorkingDirectory = process.cwd(),
   }: RunOptions = {},
 ) {
   const [command, flag, sessionId, ...extra] = argv;
@@ -259,7 +264,9 @@ export async function runCli(
     }
     await resetHookState(stateDirectory, sessionId, "Idle");
     message =
-      command === "spawn" ? spawnCommand(sessionId) : removeCommand("despawn", sessionId);
+      command === "spawn"
+        ? spawnCommand(sessionId, petLabelFor(currentWorkingDirectory))
+        : removeCommand("despawn", sessionId);
   }
 
   let response: string;
@@ -300,8 +307,17 @@ export async function runCli(
     }
     return 0;
   }
-  writeError(`OpenAgentPet: ${result.error ?? "Command failed"}`);
+  writeError(
+    `OpenAgentPet: ${result.error ?? (
+      message.command === "spawn" ? PROTOCOL_MISMATCH_ERROR : "Command failed"
+    )}`,
+  );
   return 1;
+}
+
+function petLabelFor(workingDirectory: string) {
+  const label = path.basename(workingDirectory).trim().slice(0, MAX_PET_LABEL_LENGTH);
+  return isPetLabel(label) ? label : "Local session";
 }
 
 async function readStdin() {

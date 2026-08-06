@@ -52,6 +52,7 @@ export async function startElectronApp({
       hash: pet.activity.replace(" ", "-"),
       query: {
         asset: pathToFileURL(pack.assets[pet.activity]).href,
+        label: pet.label,
         reducedMotion: String(reducedMotion),
       },
     });

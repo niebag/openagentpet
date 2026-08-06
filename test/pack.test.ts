@@ -86,7 +86,10 @@ test("path selection updates existing and future Pets and rolls back on failure"
       0,
     );
     assert.deepEqual(refreshes, [
-      { pet: { sessionId: "existing", activity: "Idle" }, pack: "Selected" },
+      {
+        pet: { sessionId: "existing", activity: "Idle", label: "openagentpet" },
+        pack: "Selected",
+      },
     ]);
 
     await runCli(["spawn", "--session-id", "future"], {

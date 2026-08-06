@@ -36,10 +36,15 @@ async function runSmoke() {
   });
 
   try {
-    for (const sessionId of ["smoke-one", "smoke-two"]) {
+    const longLabel = "very-long-project-name-".repeat(5);
+    for (const [sessionId, currentWorkingDirectory] of [
+      ["smoke-one", "/private/openagentpet"],
+      ["smoke-two", `/private/${longLabel}`],
+    ]) {
       assert.equal(
         await runCli(["spawn", "--session-id", sessionId], {
           socketPath: companionApp.companion.socketPath,
+          currentWorkingDirectory,
         }),
         0,
       );
@@ -69,6 +74,25 @@ async function runSmoke() {
         true,
       );
     }
+    assert.equal(
+      await windows[0]!.webContents.executeJavaScript(`
+        const label = document.querySelector("#label");
+        label.textContent === "openagentpet" &&
+        !label.hasAttribute("title") &&
+        getComputedStyle(label).whiteSpace === "nowrap" &&
+        getComputedStyle(label).textOverflow === "ellipsis" &&
+        getComputedStyle(document.body).gridTemplateRows.endsWith("24px")
+      `),
+      true,
+    );
+    assert.equal(
+      await windows[1]!.webContents.executeJavaScript(`
+        const label = document.querySelector("#label");
+        label.textContent === ${JSON.stringify(longLabel.slice(0, 100))} &&
+        label.scrollWidth > label.clientWidth
+      `),
+      true,
+    );
 
     const petWindow = windows[0]!;
     const [petX, petY] = petWindow.getPosition();
@@ -162,6 +186,7 @@ async function runSmoke() {
     assert.equal(
       await runCli(["spawn", "--session-id", "smoke-one"], {
         socketPath: companionApp.companion.socketPath,
+        currentWorkingDirectory: "/private/renamed-project",
         updateCheckPath: path.join(runtimeDirectory, "update-check.json"),
         packageVersion: "1.0.0",
         ask: async () => "n",
