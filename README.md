@@ -6,36 +6,52 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/niebag/openagentpet/blob/main/package.json">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/dynamic/json.svg?url=https%3A%2F%2Fraw.githubusercontent.com%2Fniebag%2Fopenagentpet%2Fmain%2Fpackage.json&amp;query=%24.version&amp;label=npm&amp;logo=npm&amp;variant=secondary&amp;size=sm&amp;mode=dark" />
-      <img src="https://shieldcn.dev/badge/dynamic/json.svg?url=https%3A%2F%2Fraw.githubusercontent.com%2Fniebag%2Fopenagentpet%2Fmain%2Fpackage.json&amp;query=%24.version&amp;label=npm&amp;logo=npm&amp;variant=secondary&amp;size=sm&amp;mode=light" alt="OpenAgentPet npm package version" />
-    </picture>
-  </a>
-  <a href="docs/adr/0009-release-openagentpet-under-mit-with-local-pet-packs.md">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/license-MIT.svg?variant=secondary&amp;size=sm&amp;logo=opensourceinitiative&amp;mode=dark" />
-      <img src="https://shieldcn.dev/badge/license-MIT.svg?variant=secondary&amp;size=sm&amp;logo=opensourceinitiative&amp;mode=light" alt="Project source license: MIT" />
-    </picture>
-  </a>
-  <a href="#requirements">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/macOS-13%2B.svg?variant=secondary&amp;size=sm&amp;logo=apple&amp;mode=dark" />
-      <img src="https://shieldcn.dev/badge/macOS-13%2B.svg?variant=secondary&amp;size=sm&amp;logo=apple&amp;mode=light" alt="Supported platform: macOS 13 or newer" />
-    </picture>
-  </a>
-  <a href="#agent-support">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Claude_Code-supported.svg?variant=secondary&amp;size=sm&amp;logo=anthropic&amp;mode=dark" />
-      <img src="https://shieldcn.dev/badge/Claude_Code-supported.svg?variant=secondary&amp;size=sm&amp;logo=anthropic&amp;mode=light" alt="Supported Agent integration: Claude Code" />
-    </picture>
-  </a>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/dynamic/json.svg?url=https%3A%2F%2Fraw.githubusercontent.com%2Fniebag%2Fopenagentpet%2Fmain%2Fpackage.json&amp;query=%24.version&amp;label=npm&amp;logo=npm&amp;variant=secondary&amp;size=sm&amp;mode=dark" />
+    <img src="https://shieldcn.dev/badge/dynamic/json.svg?url=https%3A%2F%2Fraw.githubusercontent.com%2Fniebag%2Fopenagentpet%2Fmain%2Fpackage.json&amp;query=%24.version&amp;label=npm&amp;logo=npm&amp;variant=secondary&amp;size=sm&amp;mode=light" alt="OpenAgentPet npm package version" />
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/github/ci/niebag/openagentpet.svg?workflow=Tests&amp;branch=main&amp;variant=secondary&amp;size=sm&amp;mode=dark" />
+    <img src="https://shieldcn.dev/github/ci/niebag/openagentpet.svg?workflow=Tests&amp;branch=main&amp;variant=secondary&amp;size=sm&amp;mode=light" alt="Tests workflow status" />
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/license-MIT.svg?variant=secondary&amp;size=sm&amp;logo=opensourceinitiative&amp;mode=dark" />
+    <img src="https://shieldcn.dev/badge/license-MIT.svg?variant=secondary&amp;size=sm&amp;logo=opensourceinitiative&amp;mode=light" alt="Project source license: MIT" />
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/macOS-13%2B.svg?variant=secondary&amp;size=sm&amp;logo=apple&amp;mode=dark" />
+    <img src="https://shieldcn.dev/badge/macOS-13%2B.svg?variant=secondary&amp;size=sm&amp;logo=apple&amp;mode=light" alt="Supported platform: macOS 13 or newer" />
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Claude_Code-supported.svg?variant=secondary&amp;size=sm&amp;logo=anthropic&amp;mode=dark" />
+    <img src="https://shieldcn.dev/badge/Claude_Code-supported.svg?variant=secondary&amp;size=sm&amp;logo=anthropic&amp;mode=light" alt="Supported Agent integration: Claude Code" />
+  </picture>
 </p>
 
 OpenAgentPet turns observable activity from each local Claude Code session into a small animated Pet that floats above your macOS windows. Pets are movable and resizable by default, and OpenAgentPet sends no prompt or transcript data off your Mac.
 
 > [!NOTE]
 > OpenAgentPet 1.0.0 is available from npm. The quick-start command installs the published release.
+
+## Contents
+
+- [Contents](#contents)
+- [Preview](#preview)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Activity states](#activity-states)
+- [Tray controls](#tray-controls)
+- [Pet packs](#pet-packs)
+- [Privacy](#privacy)
+- [Updates](#updates)
+- [Removal](#removal)
+- [Agent support](#agent-support)
+- [License](#license)
+- [Release validation](#release-validation)
+- [Downloads](#downloads)
+- [Contributors](#contributors)
+- [Contributing](#contributing)
+- [Disclaimer](#disclaimer)
 
 ## Preview
 
@@ -199,6 +215,24 @@ npm run test:release
 ```
 
 The release check packs and installs the tarball in a temporary prefix, runs the macOS smoke test against that installed package, installs the plugin at user scope in an isolated Claude Code configuration, executes the unit tests, and validates the marketplace metadata.
+
+## Downloads
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/chart/npm/openagentpet.svg?days=90&amp;theme=violet&amp;mode=dark" />
+    <img src="https://shieldcn.dev/chart/npm/openagentpet.svg?days=90&amp;theme=violet&amp;mode=light" alt="OpenAgentPet npm downloads over the last 90 days" />
+  </picture>
+</p>
+
+## Contributors
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/contributors/niebag/openagentpet.svg?theme=violet&amp;mode=dark" />
+    <img src="https://shieldcn.dev/contributors/niebag/openagentpet.svg?theme=violet&amp;mode=light" alt="OpenAgentPet contributors" />
+  </picture>
+</p>
 
 ## Contributing
 
